@@ -1,0 +1,47 @@
+# Rust build artifacts
+/target/
+
+# Cargo lock file (optional — remove this line if you want to track Cargo.lock)
+# Cargo.lock
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.*
+
+# Flatpak build artifacts
+.flatpak-builder/
+_build/
+builddir/
+repo/
+*.flatpak
+
+# GNOME Builder
+_build/
+
+# Debug files
+*.pdb
+
+# AI-related files and folders
+.junie/
+.claude/
+.github/copilot/
+.copilot/
+.cursor/
+.aider*
+.codeium/
+.continue/
+.tabnine/
+
+# Temporary output files
+.output.txt

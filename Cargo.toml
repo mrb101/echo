@@ -1,0 +1,33 @@
+[package]
+name = "echo"
+version = "0.1.0"
+edition = "2021"
+description = "A native Linux desktop AI chat application for GNOME"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+relm4 = { version = "0.10", features = ["libadwaita", "macros", "gnome_46"] }
+gtk = { package = "gtk4", version = "0.10" }
+adw = { package = "libadwaita", version = "0.8" }
+gio = "0.21"
+glib = "0.21"
+rusqlite = { version = "0.38", features = ["bundled"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+pulldown-cmark = "0.12"
+base64 = "0.22"
+futures = "0.3"
+oo7 = "0.5"
+async-trait = "0.1"
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[build-dependencies]
+glib-build-tools = "0.21"

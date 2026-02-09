@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Echo
+Comment=A native Linux desktop AI chat application for GNOME
+Exec=echo
+Icon=com.echo.Echo
+Terminal=false
+Type=Application
+Categories=Utility;Chat;
+StartupWMClass=com.echo.Echo

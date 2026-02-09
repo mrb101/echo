@@ -1,0 +1,195 @@
+/* Echo - Styles */
+
+/* Message bubbles */
+.message-bubble-user {
+    background-color: @accent_bg_color;
+    color: @accent_fg_color;
+    border-radius: 12px 12px 4px 12px;
+    padding: 4px;
+    min-width: 120px;
+}
+
+.message-bubble-assistant {
+    background-color: @card_bg_color;
+    color: @card_fg_color;
+    border-radius: 12px 12px 12px 4px;
+    padding: 4px;
+    min-width: 120px;
+}
+
+/* Input card container */
+.input-card {
+    background-color: alpha(@view_fg_color, 0.06);
+    border-radius: 16px;
+    border: 1px solid alpha(@view_fg_color, 0.12);
+}
+
+/* Text view inside input card — transparent, no border */
+.input-text-view {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+}
+
+/* Bottom toolbar inside input card */
+.input-toolbar {
+    padding: 2px 4px 4px 4px;
+}
+
+/* Sidebar conversation rows */
+.navigation-sidebar row {
+    border-radius: 8px;
+    margin: 2px 4px;
+}
+
+.navigation-sidebar row:selected {
+    background-color: alpha(@accent_bg_color, 0.15);
+}
+
+/* Sidebar date group headers */
+.sidebar-date-header {
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-size: 0.7em;
+    padding-top: 4px;
+    padding-bottom: 2px;
+}
+
+/* Code blocks */
+.code-block {
+    background-color: alpha(@view_fg_color, 0.05);
+    border-radius: 8px;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    border: 1px solid alpha(@view_fg_color, 0.12);
+}
+
+.code-block-header {
+    padding: 4px 12px;
+    border-bottom: 1px solid alpha(@view_fg_color, 0.08);
+}
+
+.code-block-language {
+    font-size: small;
+    color: alpha(@view_fg_color, 0.6);
+}
+
+.code-block-content {
+    background: transparent;
+    padding: 4px;
+    font-family: monospace;
+}
+
+/* Block quotes */
+.blockquote {
+    border-left: 3px solid @accent_bg_color;
+    padding-left: 12px;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    color: alpha(@view_fg_color, 0.75);
+}
+
+/* Headings */
+.heading-1 {
+    font-size: 24px;
+    font-weight: bold;
+    margin-top: 8px;
+    margin-bottom: 4px;
+}
+
+.heading-2 {
+    font-size: 20px;
+    font-weight: bold;
+    margin-top: 6px;
+    margin-bottom: 4px;
+}
+
+.heading-3 {
+    font-size: 16px;
+    font-weight: bold;
+    margin-top: 4px;
+    margin-bottom: 2px;
+}
+
+.heading-4 {
+    font-size: 14px;
+    font-weight: bold;
+    margin-top: 4px;
+    margin-bottom: 2px;
+}
+
+/* List bullets */
+.list-bullet {
+    min-width: 20px;
+    color: alpha(@view_fg_color, 0.6);
+}
+
+/* Token info */
+.token-info {
+    font-size: 0.75em;
+    opacity: 0.6;
+}
+
+/* Message action buttons (hover overlay) */
+.message-actions {
+    background-color: alpha(@card_bg_color, 0.85);
+    border-radius: 8px;
+    padding: 2px 4px;
+}
+
+.message-actions button {
+    min-width: 24px;
+    min-height: 24px;
+    padding: 2px;
+}
+
+/* Attachment strip */
+.attachment-strip {
+    padding: 4px 0;
+}
+
+/* Attachment thumbnail */
+.attachment-thumbnail {
+    border-radius: 8px;
+    border: 1px solid alpha(@view_fg_color, 0.15);
+}
+
+/* Drag-and-drop hover */
+.drag-hover {
+    outline: 2px dashed @accent_bg_color;
+    outline-offset: -2px;
+}
+
+
+/* Scroll to bottom button */
+.scroll-to-bottom {
+    margin-bottom: 8px;
+    opacity: 0.9;
+}
+
+/* Message timestamp */
+.message-timestamp {
+    font-size: 0.75em;
+    opacity: 0.5;
+}
+
+/* Date separator between messages */
+.date-separator {
+    font-size: 0.8em;
+    opacity: 0.6;
+    padding: 4px 16px;
+    font-weight: 500;
+}
+
+/* Input placeholder / markdown hints */
+.input-placeholder {
+    opacity: 0.4;
+    font-style: italic;
+    font-size: 0.9em;
+}
+
+/* Compact model selector row above input */
+.selector-row {
+    padding: 2px 4px;
+}
