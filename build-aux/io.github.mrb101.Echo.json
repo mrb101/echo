@@ -1,0 +1,44 @@
+{
+    "id": "io.github.mrb101.Echo",
+    "runtime": "org.gnome.Platform",
+    "runtime-version": "49",
+    "sdk": "org.gnome.Sdk",
+    "sdk-extensions": [
+        "org.freedesktop.Sdk.Extension.rust-stable"
+    ],
+    "command": "echo",
+    "finish-args": [
+        "--share=network",
+        "--share=ipc",
+        "--socket=fallback-x11",
+        "--socket=wayland",
+        "--talk-name=org.freedesktop.secrets"
+    ],
+    "build-options": {
+        "append-path": "/usr/lib/sdk/rust-stable/bin",
+        "env": {
+            "CARGO_HOME": "/run/build/echo/cargo",
+            "CARGO_REGISTRIES_CRATES_IO_PROTOCOL": "sparse"
+        }
+    },
+    "modules": [
+        {
+            "name": "echo",
+            "buildsystem": "simple",
+            "build-commands": [
+                "cargo --offline build --release",
+                "install -Dm755 target/release/echo /app/bin/echo",
+                "install -Dm644 data/io.github.mrb101.Echo.desktop /app/share/applications/io.github.mrb101.Echo.desktop",
+                "install -Dm644 data/resources/icons/scalable/apps/io.github.mrb101.Echo.svg /app/share/icons/hicolor/scalable/apps/io.github.mrb101.Echo.svg",
+                "install -Dm644 data/io.github.mrb101.Echo.metainfo.xml /app/share/metainfo/io.github.mrb101.Echo.metainfo.xml"
+            ],
+            "sources": [
+                {
+                    "type": "dir",
+                    "path": ".."
+                },
+                "cargo-sources.json"
+            ]
+        }
+    ]
+}

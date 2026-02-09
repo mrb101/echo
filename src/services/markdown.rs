@@ -478,7 +478,9 @@ mod tests {
     #[test]
     fn test_horizontal_rule() {
         let blocks = parse_markdown("above\n\n---\n\nbelow");
-        assert!(blocks.iter().any(|b| matches!(b, MessageBlock::HorizontalRule)));
+        assert!(blocks
+            .iter()
+            .any(|b| matches!(b, MessageBlock::HorizontalRule)));
     }
 
     #[test]

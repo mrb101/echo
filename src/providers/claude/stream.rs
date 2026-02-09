@@ -74,17 +74,18 @@ pub async fn parse_sse_stream(response: reqwest::Response, tx: mpsc::Sender<Stre
                             tokens_in = usage.input_tokens;
                         }
                     }
-                    ClaudeStreamEvent::ContentBlockDelta { delta, .. } => {
-                        if let ClaudeDelta::TextDelta { text } = delta {
-                            if tx.send(StreamEvent::Token(text)).await.is_err() {
-                                return; // receiver dropped
-                            }
+                    ClaudeStreamEvent::ContentBlockDelta {
+                        delta: ClaudeDelta::TextDelta { text },
+                        ..
+                    } => {
+                        if tx.send(StreamEvent::Token(text)).await.is_err() {
+                            return; // receiver dropped
                         }
                     }
-                    ClaudeStreamEvent::MessageDelta { usage, .. } => {
-                        if let Some(usage) = usage {
-                            tokens_out = usage.output_tokens;
-                        }
+                    ClaudeStreamEvent::MessageDelta {
+                        usage: Some(usage), ..
+                    } => {
+                        tokens_out = usage.output_tokens;
                     }
                     ClaudeStreamEvent::MessageStop {} => {
                         let _ = tx

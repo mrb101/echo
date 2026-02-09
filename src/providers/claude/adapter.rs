@@ -63,8 +63,7 @@ impl ClaudeProvider {
                     let mut blocks = Vec::new();
 
                     for img in &msg.images {
-                        let b64 =
-                            base64::engine::general_purpose::STANDARD.encode(&img.data);
+                        let b64 = base64::engine::general_purpose::STANDARD.encode(&img.data);
                         blocks.push(ClaudeContentBlock::Image {
                             source: ClaudeImageSource {
                                 source_type: "base64".to_string(),
@@ -127,9 +126,7 @@ impl AiProvider for ClaudeProvider {
 
         let status = response.status();
 
-        if status == reqwest::StatusCode::UNAUTHORIZED
-            || status == reqwest::StatusCode::FORBIDDEN
-        {
+        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
             return Err(ProviderError::AuthError("Invalid API key".to_string()));
         }
 
@@ -166,9 +163,9 @@ impl AiProvider for ClaudeProvider {
         // Non-auth failure: check for auth-related error messages in body
         let body = response.text().await.unwrap_or_default();
         if body.contains("authentication") || body.contains("api_key") {
-            return Err(ProviderError::AuthError(
-                Self::parse_error_message(status, &body),
-            ));
+            return Err(ProviderError::AuthError(Self::parse_error_message(
+                status, &body,
+            )));
         }
 
         // Key is likely valid but models endpoint failed — use fallback
@@ -216,9 +213,9 @@ impl AiProvider for ClaudeProvider {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(ProviderError::RequestFailed(
-                Self::parse_error_message(status, &body),
-            ));
+            return Err(ProviderError::RequestFailed(Self::parse_error_message(
+                status, &body,
+            )));
         }
 
         let claude_response: ClaudeResponse = response
@@ -229,8 +226,8 @@ impl AiProvider for ClaudeProvider {
         let content = claude_response
             .content
             .into_iter()
-            .filter_map(|block| match block {
-                ClaudeResponseBlock::Text { text } => Some(text),
+            .map(|block| match block {
+                ClaudeResponseBlock::Text { text } => text,
             })
             .collect::<Vec<_>>()
             .join("");
@@ -301,9 +298,9 @@ impl AiProvider for ClaudeProvider {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(ProviderError::RequestFailed(
-                Self::parse_error_message(status, &body),
-            ));
+            return Err(ProviderError::RequestFailed(Self::parse_error_message(
+                status, &body,
+            )));
         }
 
         parse_sse_stream(response, tx).await;

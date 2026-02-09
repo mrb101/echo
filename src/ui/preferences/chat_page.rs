@@ -154,7 +154,10 @@ impl Component for ChatPage {
             ChatPageMsg::SystemPromptChanged => {
                 let start = self.system_prompt_buffer.start_iter();
                 let end = self.system_prompt_buffer.end_iter();
-                let text = self.system_prompt_buffer.text(&start, &end, false).to_string();
+                let text = self
+                    .system_prompt_buffer
+                    .text(&start, &end, false)
+                    .to_string();
                 self.settings.default_system_prompt = if text.trim().is_empty() {
                     None
                 } else {

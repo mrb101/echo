@@ -40,13 +40,12 @@ pub fn create_preferences_window(
             .collect::<Vec<_>>()
     };
 
-    let accounts_page = AccountsPage::builder().launch(accounts).forward(
-        sender,
-        |output| match output {
+    let accounts_page = AccountsPage::builder()
+        .launch(accounts)
+        .forward(sender, |output| match output {
             AccountsPageOutput::AddAccount => AppMsg::OpenAccountSetup,
             AccountsPageOutput::DeleteAccount(id) => AppMsg::DeleteAccountFromPrefs(id),
-        },
-    );
+        });
 
     let chat_page = ChatPage::builder()
         .launch(settings.clone())
@@ -54,11 +53,12 @@ pub fn create_preferences_window(
             ChatPageOutput::SettingsChanged(s) => AppMsg::SettingsChanged(s),
         });
 
-    let appearance_page = AppearancePage::builder()
-        .launch(settings.clone())
-        .forward(sender, |output| match output {
-            AppearancePageOutput::SettingsChanged(s) => AppMsg::SettingsChanged(s),
-        });
+    let appearance_page =
+        AppearancePage::builder()
+            .launch(settings.clone())
+            .forward(sender, |output| match output {
+                AppearancePageOutput::SettingsChanged(s) => AppMsg::SettingsChanged(s),
+            });
 
     let prefs_window = adw::PreferencesWindow::new();
     prefs_window.set_title(Some("Preferences"));
@@ -85,9 +85,7 @@ pub fn create_shortcuts_window(parent: &adw::ApplicationWindow) {
         .build();
 
     // General section
-    let general_group = gtk::ShortcutsGroup::builder()
-        .title("General")
-        .build();
+    let general_group = gtk::ShortcutsGroup::builder().title("General").build();
 
     let new_chat = gtk::ShortcutsShortcut::builder()
         .title("New chat")
@@ -114,9 +112,7 @@ pub fn create_shortcuts_window(parent: &adw::ApplicationWindow) {
     general_group.add_shortcut(&quick_switch);
 
     // Chat section
-    let chat_group = gtk::ShortcutsGroup::builder()
-        .title("Chat")
-        .build();
+    let chat_group = gtk::ShortcutsGroup::builder().title("Chat").build();
 
     let send = gtk::ShortcutsShortcut::builder()
         .title("Send message")
@@ -148,9 +144,7 @@ pub fn create_shortcuts_window(parent: &adw::ApplicationWindow) {
         .build();
     chat_group.add_shortcut(&paste);
 
-    let section = gtk::ShortcutsSection::builder()
-        .title("Echo")
-        .build();
+    let section = gtk::ShortcutsSection::builder().title("Echo").build();
     section.add_group(&general_group);
     section.add_group(&chat_group);
 
@@ -165,7 +159,7 @@ pub fn create_about_dialog(parent: &adw::ApplicationWindow) {
         .developer_name("Echo Contributors")
         .license_type(gtk::License::Gpl30)
         .comments("A native Linux desktop AI chat application for GNOME")
-        .application_icon("com.echo.Echo")
+        .application_icon("io.github.mrb101.Echo")
         .build();
     about.set_transient_for(Some(parent));
     about.present();
@@ -176,26 +170,27 @@ pub fn create_account_setup(
     sender: &relm4::Sender<AppMsg>,
     provider: ProviderId,
 ) -> AsyncController<AccountSetupDialog> {
-    let setup = AccountSetupDialog::builder()
-        .launch(provider)
-        .forward(sender, |output| match output {
-            AccountSetupOutput::AccountAdded {
-                provider,
-                label,
-                api_key,
-                base_url,
-                default_model,
-                set_as_default,
-            } => AppMsg::AccountAdded {
-                provider,
-                label,
-                api_key,
-                base_url,
-                default_model,
-                set_as_default,
-            },
-            AccountSetupOutput::Cancelled => AppMsg::AccountSetupCancelled,
-        });
+    let setup =
+        AccountSetupDialog::builder()
+            .launch(provider)
+            .forward(sender, |output| match output {
+                AccountSetupOutput::AccountAdded {
+                    provider,
+                    label,
+                    api_key,
+                    base_url,
+                    default_model,
+                    set_as_default,
+                } => AppMsg::AccountAdded {
+                    provider,
+                    label,
+                    api_key,
+                    base_url,
+                    default_model,
+                    set_as_default,
+                },
+                AccountSetupOutput::Cancelled => AppMsg::AccountSetupCancelled,
+            });
 
     setup.widget().set_transient_for(Some(parent));
     setup.widget().present();
@@ -207,15 +202,15 @@ pub fn create_onboarding(
     parent: &adw::ApplicationWindow,
     sender: &relm4::Sender<AppMsg>,
 ) -> AsyncController<OnboardingWindow> {
-    let onboarding = OnboardingWindow::builder().launch(()).forward(
-        sender,
-        |output| match output {
-            OnboardingOutput::SetupProvider(provider) => {
-                AppMsg::OnboardingSetupProvider(provider)
-            }
-            OnboardingOutput::Skipped => AppMsg::OnboardingSkipped,
-        },
-    );
+    let onboarding =
+        OnboardingWindow::builder()
+            .launch(())
+            .forward(sender, |output| match output {
+                OnboardingOutput::SetupProvider(provider) => {
+                    AppMsg::OnboardingSetupProvider(provider)
+                }
+                OnboardingOutput::Skipped => AppMsg::OnboardingSkipped,
+            });
 
     onboarding.widget().set_transient_for(Some(parent));
     onboarding.widget().present();

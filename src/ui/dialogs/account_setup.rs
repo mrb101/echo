@@ -370,16 +370,11 @@ impl AsyncComponent for AccountSetupDialog {
 
                 self.discovered_models = models.iter().map(|m| m.id.clone()).collect();
                 self.models_discovered = true;
-                self.default_model = self
-                    .discovered_models
-                    .first()
-                    .cloned()
-                    .unwrap_or_default();
+                self.default_model = self.discovered_models.first().cloned().unwrap_or_default();
 
                 // Populate model dropdown with discovered models
                 self.updating_model = true;
-                let names: Vec<&str> =
-                    self.discovered_models.iter().map(|s| s.as_str()).collect();
+                let names: Vec<&str> = self.discovered_models.iter().map(|s| s.as_str()).collect();
                 let list = gtk::StringList::new(&names);
                 self.model_dropdown.set_model(Some(&list));
                 self.model_dropdown.set_selected(0);

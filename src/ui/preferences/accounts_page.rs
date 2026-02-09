@@ -100,7 +100,7 @@ impl AccountsPage {
         for account in &self.accounts {
             let row = adw::ActionRow::builder()
                 .title(&account.label)
-                .subtitle(&format!(
+                .subtitle(format!(
                     "{} - {}{}",
                     account.provider.display_name(),
                     account.default_model,

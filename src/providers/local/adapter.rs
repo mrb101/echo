@@ -25,10 +25,7 @@ impl LocalProvider {
         }
     }
 
-    fn build_messages(
-        system_prompt: Option<&str>,
-        messages: &[ChatMessage],
-    ) -> Vec<OpenAiMessage> {
+    fn build_messages(system_prompt: Option<&str>, messages: &[ChatMessage]) -> Vec<OpenAiMessage> {
         let mut result = Vec::new();
 
         if let Some(prompt) = system_prompt {
@@ -78,9 +75,7 @@ impl AiProvider for LocalProvider {
         base_url: Option<&str>,
     ) -> Result<Vec<ModelInfo>, ProviderError> {
         let base = base_url.ok_or_else(|| {
-            ProviderError::RequestFailed(
-                "Base URL is required for Local provider".to_string(),
-            )
+            ProviderError::RequestFailed("Base URL is required for Local provider".to_string())
         })?;
 
         let url = format!("{}/v1/models", base.trim_end_matches('/'));
@@ -90,10 +85,9 @@ impl AiProvider for LocalProvider {
             req = req.header("Authorization", auth);
         }
 
-        let response = req
-            .send()
-            .await
-            .map_err(|e| ProviderError::NetworkError(format!("Failed to connect to {}: {}", base, e)))?;
+        let response = req.send().await.map_err(|e| {
+            ProviderError::NetworkError(format!("Failed to connect to {}: {}", base, e))
+        })?;
 
         if response.status() == reqwest::StatusCode::UNAUTHORIZED
             || response.status() == reqwest::StatusCode::FORBIDDEN
@@ -104,15 +98,14 @@ impl AiProvider for LocalProvider {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(ProviderError::RequestFailed(
-                Self::parse_error_message(status, &body),
-            ));
+            return Err(ProviderError::RequestFailed(Self::parse_error_message(
+                status, &body,
+            )));
         }
 
-        let model_list: OpenAiModelList = response
-            .json()
-            .await
-            .map_err(|e| ProviderError::InvalidResponse(format!("Failed to parse model list: {}", e)))?;
+        let model_list: OpenAiModelList = response.json().await.map_err(|e| {
+            ProviderError::InvalidResponse(format!("Failed to parse model list: {}", e))
+        })?;
 
         let models = model_list
             .data
@@ -129,9 +122,7 @@ impl AiProvider for LocalProvider {
 
     async fn send_message(&self, request: ChatRequest) -> Result<ChatResponse, ProviderError> {
         let base = request.base_url.as_deref().ok_or_else(|| {
-            ProviderError::RequestFailed(
-                "Base URL is required for Local provider".to_string(),
-            )
+            ProviderError::RequestFailed("Base URL is required for Local provider".to_string())
         })?;
 
         let url = format!("{}/v1/chat/completions", base.trim_end_matches('/'));
@@ -176,9 +167,9 @@ impl AiProvider for LocalProvider {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(ProviderError::RequestFailed(
-                Self::parse_error_message(status, &body),
-            ));
+            return Err(ProviderError::RequestFailed(Self::parse_error_message(
+                status, &body,
+            )));
         }
 
         let openai_response: OpenAiResponse = response
@@ -219,9 +210,7 @@ impl AiProvider for LocalProvider {
         use super::stream::parse_sse_stream;
 
         let base = request.base_url.as_deref().ok_or_else(|| {
-            ProviderError::RequestFailed(
-                "Base URL is required for Local provider".to_string(),
-            )
+            ProviderError::RequestFailed("Base URL is required for Local provider".to_string())
         })?;
 
         let url = format!("{}/v1/chat/completions", base.trim_end_matches('/'));
@@ -266,9 +255,9 @@ impl AiProvider for LocalProvider {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(ProviderError::RequestFailed(
-                Self::parse_error_message(status, &body),
-            ));
+            return Err(ProviderError::RequestFailed(Self::parse_error_message(
+                status, &body,
+            )));
         }
 
         parse_sse_stream(response, tx).await;

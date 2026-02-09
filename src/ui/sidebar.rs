@@ -9,7 +9,7 @@ use crate::models::Conversation;
 
 #[derive(Debug, Clone)]
 pub enum SidebarItem {
-    Header(String),              // "Pinned", "Today", "Yesterday", etc.
+    Header(String), // "Pinned", "Today", "Yesterday", etc.
     Conversation(Conversation),
 }
 
@@ -352,26 +352,32 @@ impl Component for Sidebar {
                         }
                         insert_header_at = guard.len();
                     }
-                    guard.insert(insert_header_at, SidebarItem::Header(today_group.to_string()));
-                    guard.insert(insert_header_at + 1, SidebarItem::Conversation(conversation));
+                    guard.insert(
+                        insert_header_at,
+                        SidebarItem::Header(today_group.to_string()),
+                    );
+                    guard.insert(
+                        insert_header_at + 1,
+                        SidebarItem::Conversation(conversation),
+                    );
                 }
                 drop(guard);
                 self.apply_search_filter();
             }
             SidebarMsg::RemoveConversation(id) => {
                 let mut guard = self.conversations.guard();
-                let pos = guard.iter().position(|r| {
-                    matches!(&r.item, SidebarItem::Conversation(c) if c.id == id)
-                });
+                let pos = guard
+                    .iter()
+                    .position(|r| matches!(&r.item, SidebarItem::Conversation(c) if c.id == id));
                 if let Some(index) = pos {
                     guard.remove(index);
                 }
             }
             SidebarMsg::UpdateConversationTitle(id, title) => {
                 let mut guard = self.conversations.guard();
-                let pos = guard.iter().position(|r| {
-                    matches!(&r.item, SidebarItem::Conversation(c) if c.id == id)
-                });
+                let pos = guard
+                    .iter()
+                    .position(|r| matches!(&r.item, SidebarItem::Conversation(c) if c.id == id));
                 if let Some(index) = pos {
                     if let Some(row) = guard.get_mut(index) {
                         if let SidebarItem::Conversation(conv) = &mut row.item {
@@ -384,12 +390,14 @@ impl Component for Sidebar {
                 // Collect info from guard first, then drop it
                 let (is_header, is_pinned) = {
                     let guard = self.conversations.guard();
-                    let is_header = guard.get(index).map(|r| {
-                        matches!(&r.item, SidebarItem::Header(_))
-                    }).unwrap_or(true);
-                    let is_pinned = guard.get(index).map(|r| {
-                        matches!(&r.item, SidebarItem::Conversation(c) if c.pinned)
-                    }).unwrap_or(false);
+                    let is_header = guard
+                        .get(index)
+                        .map(|r| matches!(&r.item, SidebarItem::Header(_)))
+                        .unwrap_or(true);
+                    let is_pinned = guard
+                        .get(index)
+                        .map(|r| matches!(&r.item, SidebarItem::Conversation(c) if c.pinned))
+                        .unwrap_or(false);
                     (is_header, is_pinned)
                 };
 
@@ -423,7 +431,9 @@ impl Component for Sidebar {
                 let rename_action = gio::SimpleAction::new("rename", None);
                 let idx = index;
                 rename_action.connect_activate(move |_, _| {
-                    sender_rename.send(SidebarMsg::RenameConversation(idx)).unwrap();
+                    sender_rename
+                        .send(SidebarMsg::RenameConversation(idx))
+                        .unwrap();
                 });
                 action_group.add_action(&rename_action);
 
@@ -431,7 +441,9 @@ impl Component for Sidebar {
                 let export_action = gio::SimpleAction::new("export", None);
                 let idx = index;
                 export_action.connect_activate(move |_, _| {
-                    sender_export.send(SidebarMsg::ExportConversation(idx)).unwrap();
+                    sender_export
+                        .send(SidebarMsg::ExportConversation(idx))
+                        .unwrap();
                 });
                 action_group.add_action(&export_action);
 
@@ -439,7 +451,9 @@ impl Component for Sidebar {
                 let delete_action = gio::SimpleAction::new("delete", None);
                 let idx = index;
                 delete_action.connect_activate(move |_, _| {
-                    sender_delete.send(SidebarMsg::DeleteConversation(idx)).unwrap();
+                    sender_delete
+                        .send(SidebarMsg::DeleteConversation(idx))
+                        .unwrap();
                 });
                 action_group.add_action(&delete_action);
 
@@ -447,12 +461,7 @@ impl Component for Sidebar {
 
                 let popover = gtk::PopoverMenu::from_model(Some(&menu));
                 popover.set_parent(list_widget);
-                popover.set_pointing_to(Some(&gtk::gdk::Rectangle::new(
-                    x as i32,
-                    y as i32,
-                    1,
-                    1,
-                )));
+                popover.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
                 popover.set_has_arrow(true);
 
                 // Clean up when popover is closed (delay to let action activate first)
@@ -505,17 +514,17 @@ impl Component for Sidebar {
                         if response == "rename" {
                             let new_title = entry.text().to_string();
                             if !new_title.trim().is_empty() {
-                                sender_dlg.send(SidebarMsg::DoRename(
-                                    conv_id.clone(),
-                                    new_title,
-                                )).unwrap();
+                                sender_dlg
+                                    .send(SidebarMsg::DoRename(conv_id.clone(), new_title))
+                                    .unwrap();
                             }
                         }
                     });
 
                     // Present dialog on the widget's window
                     use adw::prelude::AdwDialogExt;
-                    if let Some(window) = root.root().and_then(|r| r.downcast::<gtk::Window>().ok()) {
+                    if let Some(window) = root.root().and_then(|r| r.downcast::<gtk::Window>().ok())
+                    {
                         dialog.present(Some(&window));
                     }
                 }
@@ -523,9 +532,9 @@ impl Component for Sidebar {
             SidebarMsg::DoRename(id, new_title) => {
                 // Update locally
                 let mut guard = self.conversations.guard();
-                let pos = guard.iter().position(|r| {
-                    matches!(&r.item, SidebarItem::Conversation(c) if c.id == id)
-                });
+                let pos = guard
+                    .iter()
+                    .position(|r| matches!(&r.item, SidebarItem::Conversation(c) if c.id == id));
                 if let Some(index) = pos {
                     if let Some(row) = guard.get_mut(index) {
                         if let SidebarItem::Conversation(conv) = &mut row.item {

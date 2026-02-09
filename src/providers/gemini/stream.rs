@@ -15,7 +15,9 @@ pub async fn parse_sse_stream(response: reqwest::Response, tx: mpsc::Sender<Stre
         let bytes = match chunk_result {
             Ok(b) => b,
             Err(e) => {
-                let _ = tx.send(StreamEvent::Error(format!("Stream error: {}", e))).await;
+                let _ = tx
+                    .send(StreamEvent::Error(format!("Stream error: {}", e)))
+                    .await;
                 return;
             }
         };
@@ -76,7 +78,8 @@ pub async fn parse_sse_stream(response: reqwest::Response, tx: mpsc::Sender<Stre
                             if let Some(content) = &candidate.content {
                                 for part in &content.parts {
                                     if let Some(text) = &part.text {
-                                        if tx.send(StreamEvent::Token(text.clone())).await.is_err() {
+                                        if tx.send(StreamEvent::Token(text.clone())).await.is_err()
+                                        {
                                             return; // receiver dropped
                                         }
                                     }

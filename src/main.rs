@@ -20,23 +20,20 @@ fn main() {
     let app = adw::Application::builder().application_id(APP_ID).build();
 
     app.connect_startup(|_| {
-        let resource_bytes = glib::Bytes::from_static(include_bytes!(concat!(
-            env!("OUT_DIR"),
-            "/echo.gresource"
-        )));
-        let resource =
-            gio::Resource::from_data(&resource_bytes).expect("Failed to load GResource");
+        let resource_bytes =
+            glib::Bytes::from_static(include_bytes!(concat!(env!("OUT_DIR"), "/echo.gresource")));
+        let resource = gio::Resource::from_data(&resource_bytes).expect("Failed to load GResource");
         gio::resources_register(&resource);
 
         let icon_theme = gtk::IconTheme::for_display(
             &gtk::gdk::Display::default().expect("Could not get default display"),
         );
-        icon_theme.add_resource_path("/com/echo/Echo/icons");
+        icon_theme.add_resource_path("/io/github/mrb101/Echo/icons");
 
-        gtk::Window::set_default_icon_name("com.echo.Echo");
+        gtk::Window::set_default_icon_name("io.github.mrb101.Echo");
 
         let provider = gtk::CssProvider::new();
-        provider.load_from_resource("/com/echo/Echo/style.css");
+        provider.load_from_resource("/io/github/mrb101/Echo/style.css");
         gtk::style_context_add_provider_for_display(
             &gtk::gdk::Display::default().expect("Could not get default display"),
             &provider,

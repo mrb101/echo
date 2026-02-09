@@ -45,9 +45,9 @@ pub enum MessageWidgetMsg {
 
 #[derive(Debug)]
 pub enum MessageWidgetOutput {
-    Regenerate(String),                // message_id
-    EditMessage(String, String),       // message_id, new_content
-    CopyFullContent(String),           // content
+    Regenerate(String),          // message_id
+    EditMessage(String, String), // message_id, new_content
+    CopyFullContent(String),     // content
 }
 
 #[relm4::factory(pub)]
@@ -166,7 +166,7 @@ impl FactoryComponent for MessageWidget {
         role_time_box.append(&role_label);
 
         let time_label = gtk::Label::builder()
-            .label(&self.message.created_at.format("%H:%M").to_string())
+            .label(self.message.created_at.format("%H:%M").to_string())
             .halign(gtk::Align::End)
             .build();
         time_label.add_css_class("caption");
@@ -213,7 +213,7 @@ impl FactoryComponent for MessageWidget {
         if !is_user {
             if let (Some(ti), Some(to)) = (self.message.tokens_in, self.message.tokens_out) {
                 let token_label = gtk::Label::builder()
-                    .label(&format!("\u{2193}{} \u{2191}{} tokens", ti, to))
+                    .label(format!("\u{2193}{} \u{2191}{} tokens", ti, to))
                     .halign(gtk::Align::End)
                     .margin_end(8)
                     .margin_bottom(2)
@@ -296,7 +296,11 @@ impl FactoryComponent for MessageWidget {
             .margin_bottom(4)
             .margin_start(12)
             .margin_end(12)
-            .halign(if is_user { gtk::Align::End } else { gtk::Align::Start })
+            .halign(if is_user {
+                gtk::Align::End
+            } else {
+                gtk::Align::Start
+            })
             .build();
         message_row.append(&overlay);
         self.message_row = Some(message_row.clone());
@@ -322,7 +326,7 @@ impl FactoryComponent for MessageWidget {
                 self.message.tokens_out = tokens_out;
                 if let (Some(ti), Some(to)) = (tokens_in, tokens_out) {
                     let token_label = gtk::Label::builder()
-                        .label(&format!("\u{2193}{} \u{2191}{} tokens", ti, to))
+                        .label(format!("\u{2193}{} \u{2191}{} tokens", ti, to))
                         .halign(gtk::Align::End)
                         .margin_end(8)
                         .margin_bottom(2)
@@ -361,18 +365,14 @@ impl FactoryComponent for MessageWidget {
                     .halign(gtk::Align::End)
                     .build();
 
-                let cancel_btn = gtk::Button::builder()
-                    .label("Cancel")
-                    .build();
+                let cancel_btn = gtk::Button::builder().label("Cancel").build();
                 let sender_cancel = sender.input_sender().clone();
                 cancel_btn.connect_clicked(move |_| {
                     sender_cancel.send(MessageWidgetMsg::CancelEdit).unwrap();
                 });
                 btn_box.append(&cancel_btn);
 
-                let save_btn = gtk::Button::builder()
-                    .label("Save & Resend")
-                    .build();
+                let save_btn = gtk::Button::builder().label("Save & Resend").build();
                 save_btn.add_css_class("suggested-action");
                 let sender_save = sender.input_sender().clone();
                 save_btn.connect_clicked(move |_| {
@@ -484,9 +484,7 @@ fn block_to_widget(block: &MessageBlock) -> gtk::Widget {
             label.set_markup(&markup);
             label.upcast()
         }
-        MessageBlock::CodeBlock { language, code } => {
-            build_code_block(language.as_deref(), code)
-        }
+        MessageBlock::CodeBlock { language, code } => build_code_block(language.as_deref(), code),
         MessageBlock::Heading { level, spans } => {
             let markup = spans_to_pango_markup(spans);
             let label = gtk::Label::builder()
@@ -519,12 +517,8 @@ fn block_to_widget(block: &MessageBlock) -> gtk::Widget {
             }
             bq_box.upcast()
         }
-        MessageBlock::UnorderedList(items) => {
-            build_list(items, false)
-        }
-        MessageBlock::OrderedList(items) => {
-            build_list(items, true)
-        }
+        MessageBlock::UnorderedList(items) => build_list(items, false),
+        MessageBlock::OrderedList(items) => build_list(items, true),
         MessageBlock::HorizontalRule => {
             let sep = gtk::Separator::builder()
                 .orientation(gtk::Orientation::Horizontal)

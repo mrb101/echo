@@ -105,11 +105,7 @@ impl Component for AccountSelector {
                 self.accounts = accounts;
                 if !self.accounts.is_empty() {
                     // Select the default account or the first one
-                    let default_idx = self
-                        .accounts
-                        .iter()
-                        .position(|a| a.is_default)
-                        .unwrap_or(0);
+                    let default_idx = self.accounts.iter().position(|a| a.is_default).unwrap_or(0);
                     self.selected_account_index = Some(default_idx);
                     self.update_models_for_account(default_idx);
 
@@ -121,9 +117,7 @@ impl Component for AccountSelector {
                         self.accounts[default_idx].id.clone(),
                     ));
                     if let Some(model) = self.models.first() {
-                        let _ = sender.output(AccountSelectorOutput::ModelSelected(
-                            model.clone(),
-                        ));
+                        let _ = sender.output(AccountSelectorOutput::ModelSelected(model.clone()));
                     }
                 } else {
                     self.selected_account_index = None;
@@ -156,9 +150,7 @@ impl Component for AccountSelector {
                     // Emit the default model for the new account since the
                     // ModelChanged signal was suppressed by the updating guard
                     if let Some(model) = self.models.first() {
-                        let _ = sender.output(AccountSelectorOutput::ModelSelected(
-                            model.clone(),
-                        ));
+                        let _ = sender.output(AccountSelectorOutput::ModelSelected(model.clone()));
                     }
                 }
             }
@@ -182,11 +174,7 @@ impl Component for AccountSelector {
                     self.sync_account_dropdown(acc_idx);
                     self.update_models_for_account(acc_idx);
                     // Find the model in the list
-                    let model_idx = self
-                        .models
-                        .iter()
-                        .position(|m| m == &model)
-                        .unwrap_or(0);
+                    let model_idx = self.models.iter().position(|m| m == &model).unwrap_or(0);
                     self.selected_model_index = Some(model_idx);
                     self.sync_model_dropdown(model_idx);
                 }
@@ -248,12 +236,11 @@ impl AccountSelector {
                         "claude-haiku-3-5-20241022".to_string(),
                     ]
                 }
-                crate::models::ProviderId::Local => {
-                    self.local_models
-                        .get(&account.id)
-                        .cloned()
-                        .unwrap_or_default()
-                }
+                crate::models::ProviderId::Local => self
+                    .local_models
+                    .get(&account.id)
+                    .cloned()
+                    .unwrap_or_default(),
             };
             for m in known {
                 if !self.models.contains(&m) {
