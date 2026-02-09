@@ -8,6 +8,7 @@ pub struct AppearancePage {
 }
 
 #[derive(Debug)]
+#[allow(clippy::enum_variant_names)]
 pub enum AppearancePageMsg {
     ColorSchemeChanged(u32),
     MessageSpacingChanged(u32),

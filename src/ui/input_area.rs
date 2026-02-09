@@ -190,10 +190,14 @@ impl Component for InputArea {
         let sender_key = sender.clone();
         let key_controller = gtk::EventControllerKey::new();
         key_controller.connect_key_pressed(move |_, key, _code, modifier| {
-            if key == gtk::gdk::Key::Return && !modifier.contains(gtk::gdk::ModifierType::SHIFT_MASK) {
+            if key == gtk::gdk::Key::Return
+                && !modifier.contains(gtk::gdk::ModifierType::SHIFT_MASK)
+            {
                 sender_key.input(InputAreaMsg::SendClicked);
                 gtk::glib::Propagation::Stop
-            } else if key == gtk::gdk::Key::v && modifier.contains(gtk::gdk::ModifierType::CONTROL_MASK) {
+            } else if key == gtk::gdk::Key::v
+                && modifier.contains(gtk::gdk::ModifierType::CONTROL_MASK)
+            {
                 // Try to paste image from clipboard
                 let sender_paste = sender_key.input_sender().clone();
                 if let Some(display) = gtk::gdk::Display::default() {
@@ -201,7 +205,9 @@ impl Component for InputArea {
                     clipboard.read_texture_async(None::<&gio::Cancellable>, move |result| {
                         if let Ok(Some(texture)) = result {
                             let bytes = texture.save_to_png_bytes();
-                            sender_paste.send(InputAreaMsg::PasteImage(bytes.to_vec())).unwrap();
+                            sender_paste
+                                .send(InputAreaMsg::PasteImage(bytes.to_vec()))
+                                .unwrap();
                         }
                     });
                 }
@@ -251,9 +257,7 @@ impl Component for InputArea {
                 self.sending = sending;
             }
             InputAreaMsg::AttachImage => {
-                let dialog = gtk::FileDialog::builder()
-                    .title("Attach Image")
-                    .build();
+                let dialog = gtk::FileDialog::builder().title("Attach Image").build();
 
                 // Set image file filter
                 let filter = gtk::FileFilter::new();
@@ -271,7 +275,9 @@ impl Component for InputArea {
                     dialog.open(Some(&window), None::<&gio::Cancellable>, move |result| {
                         if let Ok(file) = result {
                             if let Some(path) = file.path() {
-                                sender_dlg.send(InputAreaMsg::ImageFileSelected(path)).unwrap();
+                                sender_dlg
+                                    .send(InputAreaMsg::ImageFileSelected(path))
+                                    .unwrap();
                             }
                         }
                     });
@@ -386,7 +392,9 @@ impl InputArea {
         let index = self.pending_images.len();
         let sender_rm = sender.input_sender().clone();
         remove_btn.connect_clicked(move |_| {
-            sender_rm.send(InputAreaMsg::RemoveAttachment(index)).unwrap();
+            sender_rm
+                .send(InputAreaMsg::RemoveAttachment(index))
+                .unwrap();
         });
         overlay.add_overlay(&remove_btn);
 

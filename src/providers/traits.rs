@@ -8,8 +8,11 @@ use crate::models::ProviderId;
 pub trait AiProvider: Send + Sync {
     fn provider_id(&self) -> ProviderId;
 
-    async fn validate_credentials(&self, api_key: &str, base_url: Option<&str>)
-        -> Result<Vec<ModelInfo>, ProviderError>;
+    async fn validate_credentials(
+        &self,
+        api_key: &str,
+        base_url: Option<&str>,
+    ) -> Result<Vec<ModelInfo>, ProviderError>;
 
     async fn send_message(&self, request: ChatRequest) -> Result<ChatResponse, ProviderError>;
 

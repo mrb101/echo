@@ -92,10 +92,7 @@ pub async fn send_non_streaming(
     router: Arc<ProviderRouter>,
     params: ChatDispatchParams,
 ) -> Result<ChatResult, String> {
-    match router
-        .send_message(&params.provider, params.request)
-        .await
-    {
+    match router.send_message(&params.provider, params.request).await {
         Ok(response) => Ok(ChatResult {
             conversation_id: params.conversation_id,
             content: response.content,

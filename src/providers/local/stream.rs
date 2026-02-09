@@ -75,11 +75,10 @@ pub async fn parse_sse_stream(response: reqwest::Response, tx: mpsc::Sender<Stre
                     Ok(chunk) => {
                         if let Some(choice) = chunk.choices.first() {
                             if let Some(content) = &choice.delta.content {
-                                if !content.is_empty() {
-                                    if tx.send(StreamEvent::Token(content.clone())).await.is_err()
-                                    {
-                                        return; // receiver dropped
-                                    }
+                                if !content.is_empty()
+                                    && tx.send(StreamEvent::Token(content.clone())).await.is_err()
+                                {
+                                    return; // receiver dropped
                                 }
                             }
                         }

@@ -18,13 +18,11 @@ use crate::services::{AccountService, Database, KeyringService, SettingsService}
 use crate::ui::account_selector::{AccountSelector, AccountSelectorMsg, AccountSelectorOutput};
 use crate::ui::chat_view::{ChatView, ChatViewMsg, ChatViewOutput};
 use crate::ui::dialogs::account_setup::AccountSetupDialog;
-use crate::ui::dialogs::system_prompt::{
-    SystemPromptDialog, SystemPromptInit, SystemPromptOutput,
-};
+use crate::ui::dialogs::system_prompt::{SystemPromptDialog, SystemPromptInit, SystemPromptOutput};
+use crate::ui::onboarding::OnboardingWindow;
 use crate::ui::preferences::accounts_page::{AccountsPage, AccountsPageMsg};
 use crate::ui::preferences::appearance_page::{apply_color_scheme, AppearancePage};
 use crate::ui::preferences::chat_page::ChatPage;
-use crate::ui::onboarding::OnboardingWindow;
 use crate::ui::sidebar::{Sidebar, SidebarMsg, SidebarOutput};
 
 pub struct App {
@@ -87,9 +85,9 @@ pub enum AppMsg {
     SetConversationSystemPrompt(String, Option<String>),
     RenameConversation(String, String), // id, new_title
     ExportConversation(String),
-    RegenerateMessage(String),        // message_id
-    EditMessage(String, String),      // message_id, new_content
-    TogglePin(String, bool),          // id, new_pinned_state
+    RegenerateMessage(String),   // message_id
+    EditMessage(String, String), // message_id, new_content
+    TogglePin(String, bool),     // id, new_pinned_state
     ShowShortcuts,
     QuickSwitch,
 }
@@ -186,9 +184,7 @@ impl AsyncComponent for App {
         let chat_view = ChatView::builder()
             .launch(())
             .forward(sender.input_sender(), |output| match output {
-                ChatViewOutput::SendMessage { text, images } => {
-                    AppMsg::SendMessage(text, images)
-                }
+                ChatViewOutput::SendMessage { text, images } => AppMsg::SendMessage(text, images),
                 ChatViewOutput::StopGeneration => AppMsg::StopGeneration,
                 ChatViewOutput::RegenerateMessage(msg_id) => AppMsg::RegenerateMessage(msg_id),
                 ChatViewOutput::EditMessage(msg_id, content) => {
@@ -196,13 +192,13 @@ impl AsyncComponent for App {
                 }
             });
 
-        let account_selector = AccountSelector::builder().launch(()).forward(
-            sender.input_sender(),
-            |output| match output {
-                AccountSelectorOutput::AccountSelected(id) => AppMsg::AccountSelected(id),
-                AccountSelectorOutput::ModelSelected(model) => AppMsg::ModelSelected(model),
-            },
-        );
+        let account_selector =
+            AccountSelector::builder()
+                .launch(())
+                .forward(sender.input_sender(), |output| match output {
+                    AccountSelectorOutput::AccountSelected(id) => AppMsg::AccountSelected(id),
+                    AccountSelectorOutput::ModelSelected(model) => AppMsg::ModelSelected(model),
+                });
 
         let mut router = ProviderRouter::new();
         router.register(Arc::new(GeminiProvider::new()));
@@ -329,7 +325,11 @@ impl AsyncComponent for App {
                 .expect("Invalid breakpoint condition"),
         );
         breakpoint.add_setter(&split_view, "collapsed", Some(&true.to_value()));
-        breakpoint.add_setter(&content_header, "show-start-title-buttons", Some(&true.to_value()));
+        breakpoint.add_setter(
+            &content_header,
+            "show-start-title-buttons",
+            Some(&true.to_value()),
+        );
         root.add_breakpoint(breakpoint);
 
         toast_overlay.set_child(Some(&split_view));
@@ -408,7 +408,9 @@ impl AsyncComponent for App {
         let find_action = gio::SimpleAction::new("find-in-conversation", None);
         let chat_view_sender_find = model.chat_view.sender().clone();
         find_action.connect_activate(move |_, _| {
-            chat_view_sender_find.send(ChatViewMsg::ToggleSearch).unwrap();
+            chat_view_sender_find
+                .send(ChatViewMsg::ToggleSearch)
+                .unwrap();
         });
         app.add_action(&find_action);
         app.set_accels_for_action("app.find-in-conversation", &["<Control>f"]);
@@ -503,33 +505,28 @@ impl AsyncComponent for App {
                                 out.send(AppCmd::MessagesLoaded(conv_id, messages)).unwrap()
                             }
                             Err(e) => out
-                                .send(AppCmd::ChatError(format!(
-                                    "Failed to load messages: {}",
-                                    e
-                                )))
+                                .send(AppCmd::ChatError(format!("Failed to load messages: {}", e)))
                                 .unwrap(),
                         }
                     })
                 });
             }
-            AppMsg::DeleteConversation(id) => {
-                match self.db.delete_conversation(&id).await {
-                    Ok(()) => {
-                        self.sidebar
-                            .emit(SidebarMsg::RemoveConversation(id.clone()));
-                        if self
-                            .active_conversation
-                            .as_ref()
-                            .is_some_and(|c| c.id == id)
-                        {
-                            self.active_conversation = None;
-                            self.chat_view.emit(ChatViewMsg::Clear);
-                            self.content_stack.set_visible_child_name("empty");
-                        }
+            AppMsg::DeleteConversation(id) => match self.db.delete_conversation(&id).await {
+                Ok(()) => {
+                    self.sidebar
+                        .emit(SidebarMsg::RemoveConversation(id.clone()));
+                    if self
+                        .active_conversation
+                        .as_ref()
+                        .is_some_and(|c| c.id == id)
+                    {
+                        self.active_conversation = None;
+                        self.chat_view.emit(ChatViewMsg::Clear);
+                        self.content_stack.set_visible_child_name("empty");
                     }
-                    Err(e) => self.show_toast(&format!("Failed to delete: {}", e)),
                 }
-            }
+                Err(e) => self.show_toast(&format!("Failed to delete: {}", e)),
+            },
             AppMsg::SendMessage(text, images) => {
                 self.handle_send_message(text, images, sender).await;
             }
@@ -564,7 +561,6 @@ impl AsyncComponent for App {
                 }
             }
             AppMsg::InitComplete(db, keyring) => {
-
                 self.db = db.clone();
                 self.account_service = Some(AccountService::new(
                     db.clone(),
@@ -601,7 +597,6 @@ impl AsyncComponent for App {
                         }
                     })
                 });
-
             }
             AppMsg::InitFailed(err) => {
                 tracing::error!("Initialization failed: {}", err);
@@ -632,8 +627,7 @@ impl AsyncComponent for App {
                     let service_keyring = service.keyring_clone();
                     let router = self.router.clone();
 
-                    let account_service =
-                        AccountService::new(service_db, service_keyring, router);
+                    let account_service = AccountService::new(service_db, service_keyring, router);
 
                     sender.command(move |out, _| {
                         Box::pin(async move {
@@ -676,13 +670,12 @@ impl AsyncComponent for App {
                         Box::pin(async move {
                             match account_service.delete_account(&aid).await {
                                 Ok(()) => out.send(AppCmd::AccountDeleted(aid)).unwrap(),
-                                Err(e) => {
-                                    out.send(AppCmd::ChatError(format!(
+                                Err(e) => out
+                                    .send(AppCmd::ChatError(format!(
                                         "Failed to delete account: {}",
                                         e
                                     )))
-                                    .unwrap()
-                                }
+                                    .unwrap(),
                             }
                         })
                     });
@@ -692,9 +685,7 @@ impl AsyncComponent for App {
                 crate::ui::window::create_about_dialog(root);
             }
             AppMsg::ShowOnboarding => {
-
                 self.show_onboarding(root, sender.input_sender().clone());
-
             }
             AppMsg::OnboardingSetupProvider(provider) => {
                 self.onboarding = None;
@@ -711,8 +702,7 @@ impl AsyncComponent for App {
 
                 // If there's a streaming message, complete it with partial content
                 if let Some(msg_id) = self.streaming_message_id.take() {
-                    self.chat_view
-                        .emit(ChatViewMsg::StreamingComplete(msg_id));
+                    self.chat_view.emit(ChatViewMsg::StreamingComplete(msg_id));
                 }
             }
             AppMsg::ShowSystemPromptDialog => {
@@ -748,10 +738,7 @@ impl AsyncComponent for App {
                 sender.command(move |_out, _| {
                     Box::pin(async move {
                         if let Err(e) = db
-                            .update_conversation_system_prompt(
-                                &cid,
-                                prompt_for_db.as_deref(),
-                            )
+                            .update_conversation_system_prompt(&cid, prompt_for_db.as_deref())
                             .await
                         {
                             tracing::error!("Failed to update system prompt: {}", e);
@@ -838,28 +825,20 @@ impl AsyncComponent for App {
         sender: AsyncComponentSender<Self>,
         _root: &Self::Root,
     ) {
-
         match msg {
             AppCmd::Initialized(db, keyring) => {
-
                 sender.input(AppMsg::InitComplete(db, keyring));
             }
             AppCmd::InitFailed(err) => {
-
                 sender.input(AppMsg::InitFailed(err));
             }
             AppCmd::ConversationsLoaded(conversations) => {
-
                 self.sidebar
                     .emit(SidebarMsg::LoadConversations(conversations));
             }
             AppCmd::AccountsLoaded(accounts) => {
-
                 if !accounts.is_empty() {
-                    let default = accounts
-                        .iter()
-                        .find(|a| a.is_default)
-                        .or(accounts.first());
+                    let default = accounts.iter().find(|a| a.is_default).or(accounts.first());
                     if let Some(acc) = default {
                         self.selected_account_id = Some(acc.id.clone());
                         self.selected_model = Some(acc.default_model.clone());
@@ -874,10 +853,11 @@ impl AsyncComponent for App {
                 match self.db.get_conversation(&conv_id).await {
                     Ok(Some(conv)) => {
                         // Sync dropdowns to this conversation's account/model
-                        self.account_selector.emit(AccountSelectorMsg::SyncToConversation(
-                            conv.account_id.clone(),
-                            conv.model.clone(),
-                        ));
+                        self.account_selector
+                            .emit(AccountSelectorMsg::SyncToConversation(
+                                conv.account_id.clone(),
+                                conv.model.clone(),
+                            ));
                         self.selected_account_id = Some(conv.account_id.clone());
                         self.selected_model = Some(conv.model.clone());
                         self.active_conversation = Some(conv);
@@ -946,13 +926,13 @@ impl AsyncComponent for App {
                 self.chat_view.emit(ChatViewMsg::SetLoading(false));
             }
             AppCmd::ConversationCreated(conv) => {
-                self.sidebar
-                    .emit(SidebarMsg::AddConversation(conv.clone()));
+                self.sidebar.emit(SidebarMsg::AddConversation(conv.clone()));
                 // Sync dropdowns to the new conversation's account/model
-                self.account_selector.emit(AccountSelectorMsg::SyncToConversation(
-                    conv.account_id.clone(),
-                    conv.model.clone(),
-                ));
+                self.account_selector
+                    .emit(AccountSelectorMsg::SyncToConversation(
+                        conv.account_id.clone(),
+                        conv.model.clone(),
+                    ));
                 self.selected_account_id = Some(conv.account_id.clone());
                 self.selected_model = Some(conv.model.clone());
                 self.active_conversation = Some(conv);
@@ -960,7 +940,6 @@ impl AsyncComponent for App {
                 self.content_stack.set_visible_child_name("chat");
             }
             AppCmd::AccountAddResult(result) => {
-
                 match result {
                     Ok(account) => {
                         self.show_toast(&format!("Account '{}' added successfully", account.label));
@@ -982,21 +961,16 @@ impl AsyncComponent for App {
                 self.refresh_accounts(sender).await;
             }
             AppCmd::NeedsOnboarding(needs) => {
-
                 if needs {
                     sender.input(AppMsg::ShowOnboarding);
                 }
             }
             AppCmd::AccountsRefreshed(accounts) => {
-
                 if let Some(page) = &self.accounts_page {
                     page.emit(AccountsPageMsg::SetAccounts(accounts.clone()));
                 }
                 if !accounts.is_empty() {
-                    let default = accounts
-                        .iter()
-                        .find(|a| a.is_default)
-                        .or(accounts.first());
+                    let default = accounts.iter().find(|a| a.is_default).or(accounts.first());
                     if let Some(acc) = default {
                         if self.selected_account_id.is_none() {
                             self.selected_account_id = Some(acc.id.clone());
@@ -1061,9 +1035,7 @@ impl AsyncComponent for App {
                 self.chat_view
                     .emit(ChatViewMsg::StreamingComplete(message_id.clone()));
                 self.chat_view.emit(ChatViewMsg::SetMessageTokens(
-                    message_id,
-                    tokens_in,
-                    tokens_out,
+                    message_id, tokens_in, tokens_out,
                 ));
                 self.chat_view.emit(ChatViewMsg::SetLoading(false));
             }
@@ -1080,10 +1052,8 @@ impl AsyncComponent for App {
                 self.chat_view.emit(ChatViewMsg::SetLoading(false));
             }
             AppCmd::SettingsLoaded(settings) => {
-
                 self.settings = settings;
                 apply_color_scheme(self.settings.color_scheme);
-
             }
             AppCmd::LocalModelsDiscovered { account_id, models } => {
                 self.account_selector
@@ -1106,11 +1076,7 @@ impl App {
         self.toast_overlay.add_toast(toast);
     }
 
-    fn show_preferences(
-        &mut self,
-        parent: &adw::ApplicationWindow,
-        sender: relm4::Sender<AppMsg>,
-    ) {
+    fn show_preferences(&mut self, parent: &adw::ApplicationWindow, sender: relm4::Sender<AppMsg>) {
         let handles =
             crate::ui::window::create_preferences_window(parent, &sender, &self.db, &self.settings);
         self.preferences_window = Some(handles.window);
@@ -1125,23 +1091,16 @@ impl App {
         sender: relm4::Sender<AppMsg>,
         provider: ProviderId,
     ) {
-        self.account_setup =
-            Some(crate::ui::window::create_account_setup(parent, &sender, provider));
+        self.account_setup = Some(crate::ui::window::create_account_setup(
+            parent, &sender, provider,
+        ));
     }
 
-    fn show_onboarding(
-        &mut self,
-        parent: &adw::ApplicationWindow,
-        sender: relm4::Sender<AppMsg>,
-    ) {
+    fn show_onboarding(&mut self, parent: &adw::ApplicationWindow, sender: relm4::Sender<AppMsg>) {
         self.onboarding = Some(crate::ui::window::create_onboarding(parent, &sender));
     }
 
-    fn discover_local_models(
-        &self,
-        accounts: &[Account],
-        sender: &AsyncComponentSender<Self>,
-    ) {
+    fn discover_local_models(&self, accounts: &[Account], sender: &AsyncComponentSender<Self>) {
         for account in accounts {
             if account.provider != ProviderId::Local {
                 continue;
@@ -1165,20 +1124,13 @@ impl App {
                         _ => String::new(),
                     };
                     match router
-                        .validate_credentials(
-                            &ProviderId::Local,
-                            &api_key,
-                            Some(&base_url),
-                        )
+                        .validate_credentials(&ProviderId::Local, &api_key, Some(&base_url))
                         .await
                     {
                         Ok(model_infos) => {
                             let models: Vec<String> =
                                 model_infos.into_iter().map(|m| m.id).collect();
-                            let _ = out.send(AppCmd::LocalModelsDiscovered {
-                                account_id,
-                                models,
-                            });
+                            let _ = out.send(AppCmd::LocalModelsDiscovered { account_id, models });
                         }
                         Err(e) => {
                             tracing::warn!(
@@ -1236,25 +1188,21 @@ impl App {
 
         let toast_overlay = self.toast_overlay.clone();
         dialog.save(Some(root), None::<&gio::Cancellable>, move |result| {
-            match result {
-                Ok(file) => {
-                    if let Some(path) = file.path() {
-                        match std::fs::write(&path, &markdown) {
-                            Ok(()) => {
-                                let toast = adw::Toast::new("Conversation exported");
-                                toast.set_timeout(3);
-                                toast_overlay.add_toast(toast);
-                            }
-                            Err(e) => {
-                                let toast =
-                                    adw::Toast::new(&format!("Export failed: {}", e));
-                                toast.set_timeout(3);
-                                toast_overlay.add_toast(toast);
-                            }
+            if let Ok(file) = result {
+                if let Some(path) = file.path() {
+                    match std::fs::write(&path, &markdown) {
+                        Ok(()) => {
+                            let toast = adw::Toast::new("Conversation exported");
+                            toast.set_timeout(3);
+                            toast_overlay.add_toast(toast);
+                        }
+                        Err(e) => {
+                            let toast = adw::Toast::new(&format!("Export failed: {}", e));
+                            toast.set_timeout(3);
+                            toast_overlay.add_toast(toast);
                         }
                     }
                 }
-                Err(_) => {} // User cancelled
             }
         });
     }
@@ -1403,15 +1351,15 @@ impl App {
             }
         };
 
-        let (account, api_key) =
-            match account_service.get_account_with_key(&conv.account_id).await {
-                Ok(pair) => pair,
-                Err(e) => {
-                    self.show_toast(&format!("Failed to get API key: {}", e));
-                    self.chat_view.emit(ChatViewMsg::SetLoading(false));
-                    return;
-                }
-            };
+        let (account, api_key) = match account_service.get_account_with_key(&conv.account_id).await
+        {
+            Ok(pair) => pair,
+            Err(e) => {
+                self.show_toast(&format!("Failed to get API key: {}", e));
+                self.chat_view.emit(ChatViewMsg::SetLoading(false));
+                return;
+            }
+        };
 
         let system_prompt = conv
             .system_prompt
@@ -1505,11 +1453,7 @@ impl App {
         self.send_to_ai(active_messages, sender).await;
     }
 
-    async fn send_to_ai(
-        &mut self,
-        messages: Vec<Message>,
-        sender: AsyncComponentSender<Self>,
-    ) {
+    async fn send_to_ai(&mut self, messages: Vec<Message>, sender: AsyncComponentSender<Self>) {
         let conv = match &self.active_conversation {
             Some(c) => c,
             None => return,
@@ -1523,14 +1467,14 @@ impl App {
             }
         };
 
-        let (account, api_key) =
-            match account_service.get_account_with_key(&conv.account_id).await {
-                Ok(pair) => pair,
-                Err(e) => {
-                    self.show_toast(&format!("Failed to get API key: {}", e));
-                    return;
-                }
-            };
+        let (account, api_key) = match account_service.get_account_with_key(&conv.account_id).await
+        {
+            Ok(pair) => pair,
+            Err(e) => {
+                self.show_toast(&format!("Failed to get API key: {}", e));
+                return;
+            }
+        };
 
         let system_prompt = conv
             .system_prompt
@@ -1539,8 +1483,14 @@ impl App {
             .filter(|s| !s.trim().is_empty());
 
         let chat_messages = chat::messages_to_chat_messages(&messages);
-        let request =
-            chat::build_request(api_key, &conv.model, chat_messages, &account, &self.settings, system_prompt);
+        let request = chat::build_request(
+            api_key,
+            &conv.model,
+            chat_messages,
+            &account,
+            &self.settings,
+            system_prompt,
+        );
 
         let params = ChatDispatchParams {
             request,

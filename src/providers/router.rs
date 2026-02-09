@@ -28,10 +28,9 @@ impl ProviderRouter {
         api_key: &str,
         base_url: Option<&str>,
     ) -> Result<Vec<ModelInfo>, ProviderError> {
-        let provider = self
-            .providers
-            .get(provider_id)
-            .ok_or_else(|| ProviderError::RequestFailed(format!("Unknown provider: {:?}", provider_id)))?;
+        let provider = self.providers.get(provider_id).ok_or_else(|| {
+            ProviderError::RequestFailed(format!("Unknown provider: {:?}", provider_id))
+        })?;
         provider.validate_credentials(api_key, base_url).await
     }
 
@@ -40,10 +39,9 @@ impl ProviderRouter {
         provider_id: &ProviderId,
         request: ChatRequest,
     ) -> Result<ChatResponse, ProviderError> {
-        let provider = self
-            .providers
-            .get(provider_id)
-            .ok_or_else(|| ProviderError::RequestFailed(format!("Unknown provider: {:?}", provider_id)))?;
+        let provider = self.providers.get(provider_id).ok_or_else(|| {
+            ProviderError::RequestFailed(format!("Unknown provider: {:?}", provider_id))
+        })?;
         provider.send_message(request).await
     }
 
@@ -53,10 +51,9 @@ impl ProviderRouter {
         request: ChatRequest,
         tx: mpsc::Sender<StreamEvent>,
     ) -> Result<(), ProviderError> {
-        let provider = self
-            .providers
-            .get(provider_id)
-            .ok_or_else(|| ProviderError::RequestFailed(format!("Unknown provider: {:?}", provider_id)))?;
+        let provider = self.providers.get(provider_id).ok_or_else(|| {
+            ProviderError::RequestFailed(format!("Unknown provider: {:?}", provider_id))
+        })?;
         provider.stream_message(request, tx).await
     }
 }

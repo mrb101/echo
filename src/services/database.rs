@@ -25,8 +25,9 @@ impl Database {
     pub async fn new() -> Result<Self> {
         let path = Self::db_path()?;
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("Failed to create data directory: {}", parent.display()))?;
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!("Failed to create data directory: {}", parent.display())
+            })?;
         }
 
         let conn = Connection::open(&path)
@@ -551,9 +552,7 @@ impl Database {
                  FROM message_attachments WHERE message_id = ?1",
             )?;
             let attachments = stmt
-                .query_map(params![message_id], |row| {
-                    Ok(Self::row_to_attachment(row))
-                })?
+                .query_map(params![message_id], |row| Ok(Self::row_to_attachment(row)))?
                 .collect::<Result<Vec<_>, _>>()?
                 .into_iter()
                 .collect::<Result<Vec<_>, _>>()?;

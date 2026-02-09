@@ -10,7 +10,9 @@ use std::path::PathBuf;
 
 use crate::providers::ImageAttachment;
 use crate::ui::input_area::{InputArea, InputAreaMsg, InputAreaOutput};
-use crate::ui::message_widget::{MessageWidget, MessageWidgetInit, MessageWidgetMsg, MessageWidgetOutput};
+use crate::ui::message_widget::{
+    MessageWidget, MessageWidgetInit, MessageWidgetMsg, MessageWidgetOutput,
+};
 
 pub struct ChatView {
     messages: FactoryVecDeque<MessageWidget>,
@@ -56,8 +58,8 @@ pub enum ChatViewMsg {
     RenderBuffered,
     ScrollPositionChanged,
     // Forwarded from MessageWidget
-    ForwardRegenerate(String),             // message_id
-    ForwardEditMessage(String, String),    // message_id, new_content
+    ForwardRegenerate(String),          // message_id
+    ForwardEditMessage(String, String), // message_id, new_content
     CopyToClipboard(String),
     // Drag-and-drop
     ImageDropped(PathBuf),
@@ -77,8 +79,8 @@ pub enum ChatViewOutput {
         images: Vec<ImageAttachment>,
     },
     StopGeneration,
-    RegenerateMessage(String),        // message_id
-    EditMessage(String, String),      // message_id, new_content
+    RegenerateMessage(String),   // message_id
+    EditMessage(String, String), // message_id, new_content
 }
 
 #[relm4::component(pub)]
@@ -166,9 +168,7 @@ impl Component for ChatView {
         let messages = FactoryVecDeque::builder()
             .launch(gtk::Box::default())
             .forward(sender.input_sender(), |output| match output {
-                MessageWidgetOutput::Regenerate(msg_id) => {
-                    ChatViewMsg::ForwardRegenerate(msg_id)
-                }
+                MessageWidgetOutput::Regenerate(msg_id) => ChatViewMsg::ForwardRegenerate(msg_id),
                 MessageWidgetOutput::EditMessage(msg_id, new_content) => {
                     ChatViewMsg::ForwardEditMessage(msg_id, new_content)
                 }
@@ -177,14 +177,13 @@ impl Component for ChatView {
                 }
             });
 
-        let input_area = InputArea::builder().launch(()).forward(
-            sender.input_sender(),
-            |output| match output {
+        let input_area = InputArea::builder()
+            .launch(())
+            .forward(sender.input_sender(), |output| match output {
                 InputAreaOutput::SendMessage { text, images } => {
                     ChatViewMsg::UserSendMessage(text, images)
                 }
-            },
-        );
+            });
 
         let scrolled_window = gtk::ScrolledWindow::new();
 
@@ -194,9 +193,7 @@ impl Component for ChatView {
         let spinner = gtk::Spinner::builder().spinning(true).build();
         loading_box.append(&spinner);
 
-        let thinking_label = gtk::Label::builder()
-            .label("Generating...")
-            .build();
+        let thinking_label = gtk::Label::builder().label("Generating...").build();
         thinking_label.add_css_class("dim-label");
         loading_box.append(&thinking_label);
 
@@ -240,9 +237,13 @@ impl Component for ChatView {
 
         // Connect vadjustment to track scroll position
         let sender_scroll = sender.input_sender().clone();
-        scrolled_window.vadjustment().connect_value_changed(move |_| {
-            sender_scroll.send(ChatViewMsg::ScrollPositionChanged).unwrap();
-        });
+        scrolled_window
+            .vadjustment()
+            .connect_value_changed(move |_| {
+                sender_scroll
+                    .send(ChatViewMsg::ScrollPositionChanged)
+                    .unwrap();
+            });
 
         // Track container width for responsive bubble sizing
         let sender_resize = sender.input_sender().clone();
@@ -260,7 +261,9 @@ impl Component for ChatView {
         // Connect search entry
         let sender_search = sender.input_sender().clone();
         search_entry.connect_search_changed(move |entry| {
-            sender_search.send(ChatViewMsg::SearchInConversation(entry.text().to_string())).unwrap();
+            sender_search
+                .send(ChatViewMsg::SearchInConversation(entry.text().to_string()))
+                .unwrap();
         });
 
         // Escape closes search bar
@@ -277,7 +280,8 @@ impl Component for ChatView {
         search_entry.add_controller(key_ctrl);
 
         // Set up drag-and-drop for images
-        let drop_target = gtk::DropTarget::new(gio::File::static_type(), gtk::gdk::DragAction::COPY);
+        let drop_target =
+            gtk::DropTarget::new(gio::File::static_type(), gtk::gdk::DragAction::COPY);
         let root_ref = root.clone();
         let sender_drop = sender.input_sender().clone();
         drop_target.connect_drop(move |_, value, _, _| {
@@ -288,7 +292,10 @@ impl Component for ChatView {
                         .extension()
                         .and_then(|e| e.to_str())
                         .is_some_and(|ext| {
-                            matches!(ext.to_lowercase().as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp")
+                            matches!(
+                                ext.to_lowercase().as_str(),
+                                "png" | "jpg" | "jpeg" | "gif" | "webp"
+                            )
                         });
                     if is_image {
                         sender_drop.send(ChatViewMsg::ImageDropped(path)).unwrap();
@@ -320,10 +327,16 @@ impl Component for ChatView {
             ChatViewMsg::AddMessage(message) => {
                 let date_sep = self.compute_date_separator(&message);
                 let mut guard = self.messages.guard();
-                guard.push_back(MessageWidgetInit { message, show_date_separator: date_sep });
+                guard.push_back(MessageWidgetInit {
+                    message,
+                    show_date_separator: date_sep,
+                });
                 let last_idx = guard.len() - 1;
                 if self.container_width > 0 {
-                    guard.send(last_idx, MessageWidgetMsg::SetMaxWidth(self.container_width));
+                    guard.send(
+                        last_idx,
+                        MessageWidgetMsg::SetMaxWidth(self.container_width),
+                    );
                 }
                 drop(guard);
                 self.auto_scroll_to_bottom(&sender);
@@ -345,7 +358,10 @@ impl Component for ChatView {
                         }
                     };
                     self.last_message_date = Some(msg.created_at.date_naive().to_string());
-                    guard.push_back(MessageWidgetInit { message: msg.clone(), show_date_separator: date_sep });
+                    guard.push_back(MessageWidgetInit {
+                        message: msg.clone(),
+                        show_date_separator: date_sep,
+                    });
                 }
                 if self.container_width > 0 {
                     for i in 0..guard.len() {
@@ -386,10 +402,16 @@ impl Component for ChatView {
                 self.streaming_message_id = Some(message.id.clone());
                 let date_sep = self.compute_date_separator(&message);
                 let mut guard = self.messages.guard();
-                guard.push_back(MessageWidgetInit { message, show_date_separator: date_sep });
+                guard.push_back(MessageWidgetInit {
+                    message,
+                    show_date_separator: date_sep,
+                });
                 let last_idx = guard.len() - 1;
                 if self.container_width > 0 {
-                    guard.send(last_idx, MessageWidgetMsg::SetMaxWidth(self.container_width));
+                    guard.send(
+                        last_idx,
+                        MessageWidgetMsg::SetMaxWidth(self.container_width),
+                    );
                 }
                 drop(guard);
                 self.auto_scroll_to_bottom(&sender);
@@ -564,7 +586,10 @@ impl ChatView {
             }
         } else {
             for i in 0..guard.len() {
-                guard.send(i, MessageWidgetMsg::SetSearchHighlight(Some(self.search_term.clone())));
+                guard.send(
+                    i,
+                    MessageWidgetMsg::SetSearchHighlight(Some(self.search_term.clone())),
+                );
             }
         }
     }

@@ -100,17 +100,15 @@ impl AiProvider for GeminiProvider {
         if response.status() == reqwest::StatusCode::UNAUTHORIZED
             || response.status() == reqwest::StatusCode::FORBIDDEN
         {
-            return Err(ProviderError::AuthError(
-                "Invalid API key".to_string(),
-            ));
+            return Err(ProviderError::AuthError("Invalid API key".to_string()));
         }
 
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(ProviderError::RequestFailed(
-                Self::parse_error_message(status, &body),
-            ));
+            return Err(ProviderError::RequestFailed(Self::parse_error_message(
+                status, &body,
+            )));
         }
 
         let models_response: GeminiModelsResponse = response
@@ -141,10 +139,7 @@ impl AiProvider for GeminiProvider {
 
     async fn send_message(&self, request: ChatRequest) -> Result<ChatResponse, ProviderError> {
         let base = Self::base_url(request.base_url.as_deref());
-        let url = format!(
-            "{}/models/{}:generateContent",
-            base, request.model
-        );
+        let url = format!("{}/models/{}:generateContent", base, request.model);
 
         let contents = Self::build_contents(&request.messages);
 
@@ -190,9 +185,9 @@ impl AiProvider for GeminiProvider {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(ProviderError::RequestFailed(
-                Self::parse_error_message(status, &body),
-            ));
+            return Err(ProviderError::RequestFailed(Self::parse_error_message(
+                status, &body,
+            )));
         }
 
         let gemini_response: GeminiResponse = response
@@ -210,12 +205,7 @@ impl AiProvider for GeminiProvider {
             .candidates
             .and_then(|c| c.into_iter().next())
             .and_then(|c| c.content)
-            .and_then(|c| {
-                c.parts
-                    .into_iter()
-                    .filter_map(|p| p.text)
-                    .next()
-            })
+            .and_then(|c| c.parts.into_iter().filter_map(|p| p.text).next())
             .ok_or_else(|| ProviderError::InvalidResponse("No content in response".to_string()))?;
 
         let (tokens_in, tokens_out) = gemini_response
@@ -288,9 +278,9 @@ impl AiProvider for GeminiProvider {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(ProviderError::RequestFailed(
-                Self::parse_error_message(status, &body),
-            ));
+            return Err(ProviderError::RequestFailed(Self::parse_error_message(
+                status, &body,
+            )));
         }
 
         parse_sse_stream(response, tx).await;
