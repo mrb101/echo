@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.mrb101.Echo</id>
+
+  <name>Echo</name>
+  <summary>A native Linux desktop AI chat application for GNOME</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <developer id="io.github.mrb101">
+    <name>mrb101</name>
+  </developer>
+
+  <description>
+    <p>
+      Echo is a native Linux desktop AI chat application built for GNOME.
+      It provides a clean, intuitive interface for conversing with AI models
+      including Google Gemini, Anthropic Claude, and local models via
+      OpenAI-compatible APIs (Ollama, LM Studio, Docker Model Runner, vLLM).
+    </p>
+    <p>Features include:</p>
+    <ul>
+      <li>Streaming responses with real-time rendering</li>
+      <li>Markdown rendering with syntax-highlighted code blocks</li>
+      <li>Multiple AI provider support with easy account management</li>
+      <li>Conversation management with history</li>
+      <li>System prompts (global default and per-conversation)</li>
+      <li>Image attachment support</li>
+      <li>Secure API key storage via the system keyring</li>
+      <li>Native GNOME look and feel with libadwaita</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">io.github.mrb101.Echo.desktop</launchable>
+
+  <url type="homepage">https://github.com/mrb101/echo</url>
+  <url type="bugtracker">https://github.com/mrb101/echo/issues</url>
+  <url type="vcs-browser">https://github.com/mrb101/echo</url>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#62a0ea</color>
+    <color type="primary" scheme_preference="dark">#1a5fb4</color>
+  </branding>
+
+  <content_rating type="oars-1.1" />
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <control>touch</control>
+  </supports>
+
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+
+  <categories>
+    <category>Utility</category>
+    <category>Chat</category>
+  </categories>
+
+  <keywords>
+    <keyword>AI</keyword>
+    <keyword>chat</keyword>
+    <keyword>Gemini</keyword>
+    <keyword>Claude</keyword>
+    <keyword>LLM</keyword>
+    <keyword>assistant</keyword>
+    <keyword>local models</keyword>
+    <keyword>Ollama</keyword>
+  </keywords>
+
+  <releases>
+    <release version="0.1.0" date="2026-02-09">
+      <description>
+        <p>Initial release of Echo with the following features:</p>
+        <ul>
+          <li>Google Gemini and Anthropic Claude provider support</li>
+          <li>Local model support via OpenAI-compatible APIs</li>
+          <li>Streaming responses with markdown rendering</li>
+          <li>Conversation management and history</li>
+          <li>System prompts (global and per-conversation)</li>
+          <li>Image attachment support</li>
+          <li>Secure API key storage via system keyring</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+</component>

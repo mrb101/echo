@@ -165,7 +165,7 @@ pub fn create_about_dialog(parent: &adw::ApplicationWindow) {
         .developer_name("Echo Contributors")
         .license_type(gtk::License::Gpl30)
         .comments("A native Linux desktop AI chat application for GNOME")
-        .application_icon("com.echo.Echo")
+        .application_icon("io.github.mrb101.Echo")
         .build();
     about.set_transient_for(Some(parent));
     about.present();

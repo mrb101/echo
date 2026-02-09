@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="data/resources/icons/scalable/apps/com.echo.Echo.svg" width="128" height="128" alt="Echo">
+  <img src="data/resources/icons/scalable/apps/io.github.mrb101.Echo.svg" width="128" height="128" alt="Echo">
 </p>
 
 <h1 align="center">Echo</h1>
@@ -99,11 +99,11 @@ To integrate Echo with your GNOME application launcher:
 sudo cp target/release/echo /usr/local/bin/
 
 # Copy the desktop file
-cp data/com.echo.Echo.desktop ~/.local/share/applications/
+cp data/io.github.mrb101.Echo.desktop ~/.local/share/applications/
 
 # Copy the icon
 mkdir -p ~/.local/share/icons/hicolor/scalable/apps/
-cp data/resources/icons/scalable/apps/com.echo.Echo.svg ~/.local/share/icons/hicolor/scalable/apps/
+cp data/resources/icons/scalable/apps/io.github.mrb101.Echo.svg ~/.local/share/icons/hicolor/scalable/apps/
 
 # Update icon cache
 gtk4-update-icon-cache ~/.local/share/icons/hicolor/
@@ -184,7 +184,7 @@ echo/
 │       ├── dialogs/         # Modal dialogs
 │       └── preferences/     # Settings pages
 ├── data/
-│   ├── com.echo.Echo.desktop
+│   ├── io.github.mrb101.Echo.desktop
 │   └── resources/
 │       ├── style.css        # Custom GTK styling
 │       └── icons/           # Application icon

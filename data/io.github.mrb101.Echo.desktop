@@ -2,8 +2,9 @@
 Name=Echo
 Comment=A native Linux desktop AI chat application for GNOME
 Exec=echo
-Icon=com.echo.Echo
+Icon=io.github.mrb101.Echo
 Terminal=false
 Type=Application
 Categories=Utility;Chat;
-StartupWMClass=com.echo.Echo
+StartupWMClass=io.github.mrb101.Echo
+Keywords=AI;Chat;LLM;Gemini;Claude;Assistant;Ollama;
