@@ -24,6 +24,11 @@ impl KeyringService {
     }
 
     pub async fn store(&self, key_ref: &str, secret: &str) -> Result<()> {
+        // Ensure the collection is unlocked before storing
+        if let Err(e) = self.keyring.unlock().await {
+            tracing::warn!("Failed to unlock keyring (continuing anyway): {}", e);
+        }
+
         let attributes = Self::attributes(key_ref);
         let attr_refs: Vec<(&str, &str)> =
             attributes.iter().map(|(k, v)| (*k, v.as_str())).collect();
@@ -42,6 +47,11 @@ impl KeyringService {
     }
 
     pub async fn retrieve(&self, key_ref: &str) -> Result<Option<String>> {
+        // Ensure the collection is unlocked (needed for DBus Secret Service backend)
+        if let Err(e) = self.keyring.unlock().await {
+            tracing::warn!("Failed to unlock keyring (continuing anyway): {}", e);
+        }
+
         let attributes = Self::attributes(key_ref);
         let attr_refs: Vec<(&str, &str)> =
             attributes.iter().map(|(k, v)| (*k, v.as_str())).collect();

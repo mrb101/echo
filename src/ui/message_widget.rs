@@ -568,7 +568,12 @@ fn build_code_block(language: Option<&str>, code: &str) -> gtk::Widget {
             btn.set_icon_name("object-select-symbolic");
             let btn_clone = btn.clone();
             glib::timeout_add_local_once(std::time::Duration::from_millis(1500), move || {
-                btn_clone.set_icon_name("edit-copy-symbolic");
+                // Guard: only update if button is still in a live widget tree.
+                // During streaming re-renders or conversation switches, the code
+                // block may be removed, orphaning this button reference.
+                if btn_clone.parent().is_some() {
+                    btn_clone.set_icon_name("edit-copy-symbolic");
+                }
             });
         }
     });

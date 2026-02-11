@@ -13,6 +13,15 @@ pub struct ClaudeRequest {
     pub temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<ClaudeTool>>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ClaudeTool {
+    pub name: String,
+    pub description: String,
+    pub input_schema: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -35,6 +44,19 @@ pub enum ClaudeContentBlock {
     Text { text: String },
     #[serde(rename = "image")]
     Image { source: ClaudeImageSource },
+    #[serde(rename = "tool_use")]
+    ToolUse {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
+    #[serde(rename = "tool_result")]
+    ToolResult {
+        tool_use_id: String,
+        content: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        is_error: Option<bool>,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -62,6 +84,12 @@ pub struct ClaudeResponse {
 pub enum ClaudeResponseBlock {
     #[serde(rename = "text")]
     Text { text: String },
+    #[serde(rename = "tool_use")]
+    ToolUse {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -141,6 +169,8 @@ pub struct ClaudeStreamMessage {
 pub enum ClaudeDelta {
     #[serde(rename = "text_delta")]
     TextDelta { text: String },
+    #[serde(rename = "input_json_delta")]
+    InputJsonDelta { partial_json: String },
     #[serde(other)]
     Other,
 }

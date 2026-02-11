@@ -14,6 +14,20 @@ pub struct AppSettings {
     pub message_spacing: MessageSpacing,
     #[serde(default)]
     pub default_system_prompt: Option<String>,
+    #[serde(default = "default_true")]
+    pub agentic_enabled: bool,
+    #[serde(default = "default_max_iterations")]
+    pub max_agent_iterations: u32,
+    #[serde(default = "default_true")]
+    pub auto_approve_read_tools: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_max_iterations() -> u32 {
+    10
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,6 +55,9 @@ impl Default for AppSettings {
             code_font_size: 13,
             message_spacing: MessageSpacing::Comfortable,
             default_system_prompt: None,
+            agentic_enabled: true,
+            max_agent_iterations: 10,
+            auto_approve_read_tools: true,
         }
     }
 }

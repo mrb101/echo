@@ -72,6 +72,7 @@ pub fn build_request(
         temperature,
         system_prompt,
         max_tokens: None,
+        tools: Vec::new(),
     }
 }
 
@@ -83,6 +84,8 @@ pub fn messages_to_chat_messages(messages: &[crate::models::Message]) -> Vec<Cha
             role: m.role,
             content: m.content.clone(),
             images: Vec::new(),
+            tool_calls: Vec::new(),
+            tool_results: Vec::new(),
         })
         .collect()
 }
@@ -166,7 +169,7 @@ pub async fn run_streaming<F>(
                             accumulated: accumulated.clone(),
                         });
                     }
-                    Some(StreamEvent::Done { tokens_in, tokens_out }) => {
+                    Some(StreamEvent::Done { tokens_in, tokens_out, .. }) => {
                         on_event(StreamResult::Done {
                             conversation_id: conv_id,
                             message_id,
@@ -177,6 +180,12 @@ pub async fn run_streaming<F>(
                             account_id: acc_id,
                         });
                         return;
+                    }
+                    Some(StreamEvent::ToolCallStart { .. })
+                    | Some(StreamEvent::ToolCallDelta { .. })
+                    | Some(StreamEvent::ToolCallComplete { .. }) => {
+                        // Tool call events are handled by the agent loop, not here.
+                        // In non-agentic streaming mode, we ignore them.
                     }
                     Some(StreamEvent::Error(error)) => {
                         on_event(StreamResult::Error {

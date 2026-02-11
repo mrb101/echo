@@ -1,8 +1,8 @@
 use futures::StreamExt;
 use tokio::sync::mpsc;
 
-use super::models::{ClaudeDelta, ClaudeStreamEvent};
-use crate::providers::types::StreamEvent;
+use super::models::{ClaudeDelta, ClaudeResponseBlock, ClaudeStreamEvent};
+use crate::providers::types::{StopReason, StreamEvent, ToolCall};
 
 pub async fn parse_sse_stream(response: reqwest::Response, tx: mpsc::Sender<StreamEvent>) {
     let mut stream = response.bytes_stream();
@@ -10,6 +10,12 @@ pub async fn parse_sse_stream(response: reqwest::Response, tx: mpsc::Sender<Stre
     let mut buffer = String::new();
     let mut tokens_in: Option<i64> = None;
     let mut tokens_out: Option<i64> = None;
+    let mut stop_reason: Option<StopReason> = None;
+
+    // Tool use tracking
+    let mut current_tool_id: Option<String> = None;
+    let mut current_tool_name: Option<String> = None;
+    let mut current_tool_json: String = String::new();
 
     while let Some(chunk_result) = stream.next().await {
         let bytes = match chunk_result {
@@ -74,24 +80,96 @@ pub async fn parse_sse_stream(response: reqwest::Response, tx: mpsc::Sender<Stre
                             tokens_in = usage.input_tokens;
                         }
                     }
-                    ClaudeStreamEvent::ContentBlockDelta {
-                        delta: ClaudeDelta::TextDelta { text },
+                    ClaudeStreamEvent::ContentBlockStart {
+                        content_block: ClaudeResponseBlock::ToolUse { id, name, .. },
                         ..
                     } => {
-                        if tx.send(StreamEvent::Token(text)).await.is_err() {
-                            return; // receiver dropped
+                        current_tool_id = Some(id.clone());
+                        current_tool_name = Some(name.clone());
+                        current_tool_json.clear();
+                        if tx
+                            .send(StreamEvent::ToolCallStart { id, name })
+                            .await
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                    ClaudeStreamEvent::ContentBlockStart { .. } => {
+                        // Text block start — nothing special needed
+                    }
+                    ClaudeStreamEvent::ContentBlockDelta { delta, .. } => {
+                        match delta {
+                            ClaudeDelta::TextDelta { text } => {
+                                if tx.send(StreamEvent::Token(text)).await.is_err() {
+                                    return; // receiver dropped
+                                }
+                            }
+                            ClaudeDelta::InputJsonDelta { partial_json } => {
+                                current_tool_json.push_str(&partial_json);
+                                if let Some(id) = &current_tool_id {
+                                    if tx
+                                        .send(StreamEvent::ToolCallDelta {
+                                            id: id.clone(),
+                                            arguments_chunk: partial_json,
+                                        })
+                                        .await
+                                        .is_err()
+                                    {
+                                        return;
+                                    }
+                                }
+                            }
+                            ClaudeDelta::Other => {}
+                        }
+                    }
+                    ClaudeStreamEvent::ContentBlockStop { .. } => {
+                        // If we were accumulating a tool call, emit ToolCallComplete
+                        if let (Some(id), Some(name)) =
+                            (current_tool_id.take(), current_tool_name.take())
+                        {
+                            let arguments: serde_json::Value =
+                                serde_json::from_str(&current_tool_json)
+                                    .unwrap_or(serde_json::Value::Object(Default::default()));
+                            current_tool_json.clear();
+                            if tx
+                                .send(StreamEvent::ToolCallComplete {
+                                    call: ToolCall {
+                                        id,
+                                        name,
+                                        arguments,
+                                    },
+                                })
+                                .await
+                                .is_err()
+                            {
+                                return;
+                            }
                         }
                     }
                     ClaudeStreamEvent::MessageDelta {
-                        usage: Some(usage), ..
+                        delta,
+                        usage: delta_usage,
                     } => {
-                        tokens_out = usage.output_tokens;
+                        if let Some(usage) = delta_usage {
+                            tokens_out = usage.output_tokens;
+                        }
+                        // Map stop_reason
+                        if let Some(reason) = &delta.stop_reason {
+                            stop_reason = match reason.as_str() {
+                                "end_turn" => Some(StopReason::EndTurn),
+                                "tool_use" => Some(StopReason::ToolUse),
+                                "max_tokens" => Some(StopReason::MaxTokens),
+                                _ => None,
+                            };
+                        }
                     }
                     ClaudeStreamEvent::MessageStop {} => {
                         let _ = tx
                             .send(StreamEvent::Done {
                                 tokens_in,
                                 tokens_out,
+                                stop_reason,
                             })
                             .await;
                         return;
@@ -100,7 +178,7 @@ pub async fn parse_sse_stream(response: reqwest::Response, tx: mpsc::Sender<Stre
                         let _ = tx.send(StreamEvent::Error(error.message)).await;
                         return;
                     }
-                    // Ignore: ContentBlockStart, ContentBlockStop, Ping
+                    // Ignore: Ping
                     _ => {}
                 },
                 Err(e) => {
@@ -115,6 +193,7 @@ pub async fn parse_sse_stream(response: reqwest::Response, tx: mpsc::Sender<Stre
         .send(StreamEvent::Done {
             tokens_in,
             tokens_out,
+            stop_reason,
         })
         .await;
 }

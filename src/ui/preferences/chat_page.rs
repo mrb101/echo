@@ -7,6 +7,7 @@ pub struct ChatPage {
     settings: AppSettings,
     temp_scale: gtk::Scale,
     system_prompt_buffer: gtk::TextBuffer,
+    iterations_spin: gtk::SpinButton,
 }
 
 #[derive(Debug)]
@@ -15,6 +16,9 @@ pub enum ChatPageMsg {
     SetSendWithEnter(bool),
     TemperatureChanged,
     SystemPromptChanged,
+    SetAgenticEnabled(bool),
+    MaxIterationsChanged,
+    SetAutoApproveReadTools(bool),
 }
 
 #[derive(Debug)]
@@ -73,6 +77,37 @@ impl Component for ChatPage {
                 set_title: "System Prompt",
                 set_description: Some("Default instructions sent to the AI for all conversations"),
             },
+
+            adw::PreferencesGroup {
+                set_title: "Agent",
+                set_description: Some("Settings for the AI agent that can use tools"),
+
+                #[name = "agentic_row"]
+                adw::SwitchRow {
+                    set_title: "Enable agentic mode",
+                    set_subtitle: "Allow AI to use tools (file read/write, shell, web fetch)",
+                    set_active: model.settings.agentic_enabled,
+                    connect_active_notify[sender] => move |row| {
+                        sender.input(ChatPageMsg::SetAgenticEnabled(row.is_active()));
+                    },
+                },
+
+                #[local_ref]
+                iterations_row -> adw::ActionRow {
+                    set_title: "Max agent iterations",
+                    set_subtitle: "Maximum number of tool-use loops per request",
+                },
+
+                #[name = "auto_approve_row"]
+                adw::SwitchRow {
+                    set_title: "Auto-approve read tools",
+                    set_subtitle: "Skip approval for safe, read-only tools",
+                    set_active: model.settings.auto_approve_read_tools,
+                    connect_active_notify[sender] => move |row| {
+                        sender.input(ChatPageMsg::SetAutoApproveReadTools(row.is_active()));
+                    },
+                },
+            },
         }
     }
 
@@ -120,10 +155,23 @@ impl Component for ChatPage {
             sender_sp.send(ChatPageMsg::SystemPromptChanged).unwrap();
         });
 
+        // Agent iterations spin button
+        let iterations_spin = gtk::SpinButton::with_range(1.0, 50.0, 1.0);
+        iterations_spin.set_value(settings.max_agent_iterations as f64);
+        iterations_spin.set_valign(gtk::Align::Center);
+
+        let sender_iter = sender.input_sender().clone();
+        iterations_spin.connect_value_changed(move |_| {
+            sender_iter.send(ChatPageMsg::MaxIterationsChanged).unwrap();
+        });
+
+        let iterations_row = adw::ActionRow::new();
+
         let model = Self {
             settings,
             temp_scale: temp_scale.clone(),
             system_prompt_buffer: system_prompt_buffer.clone(),
+            iterations_spin: iterations_spin.clone(),
         };
 
         let widgets = view_output!();
@@ -133,6 +181,9 @@ impl Component for ChatPage {
 
         // Add text view to system prompt group
         widgets.system_prompt_group.add(&system_prompt_view);
+
+        // Add spin button to iterations row
+        widgets.iterations_row.add_suffix(&iterations_spin);
 
         ComponentParts { model, widgets }
     }
@@ -163,6 +214,18 @@ impl Component for ChatPage {
                 } else {
                     Some(text)
                 };
+                let _ = sender.output(ChatPageOutput::SettingsChanged(self.settings.clone()));
+            }
+            ChatPageMsg::SetAgenticEnabled(active) => {
+                self.settings.agentic_enabled = active;
+                let _ = sender.output(ChatPageOutput::SettingsChanged(self.settings.clone()));
+            }
+            ChatPageMsg::MaxIterationsChanged => {
+                self.settings.max_agent_iterations = self.iterations_spin.value() as u32;
+                let _ = sender.output(ChatPageOutput::SettingsChanged(self.settings.clone()));
+            }
+            ChatPageMsg::SetAutoApproveReadTools(active) => {
+                self.settings.auto_approve_read_tools = active;
                 let _ = sender.output(ChatPageOutput::SettingsChanged(self.settings.clone()));
             }
         }
