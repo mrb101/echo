@@ -7,8 +7,8 @@ use super::models::*;
 use crate::models::{ProviderId, Role};
 use crate::providers::traits::AiProvider;
 use crate::providers::types::{
-    ChatMessage, ChatRequest, ChatResponse, ModelInfo, Feature,
-    ProviderError, StopReason, StreamEvent, ToolCall, ToolDefinition,
+    ChatMessage, ChatRequest, ChatResponse, Feature, ModelInfo, ProviderError, StopReason,
+    StreamEvent, ToolCall, ToolDefinition,
 };
 
 const DEFAULT_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
@@ -313,7 +313,9 @@ impl AiProvider for GeminiProvider {
         };
 
         if content.is_empty() && tool_calls.is_empty() {
-            return Err(ProviderError::InvalidResponse("No content in response".to_string()));
+            return Err(ProviderError::InvalidResponse(
+                "No content in response".to_string(),
+            ));
         }
 
         let (tokens_in, tokens_out) = gemini_response

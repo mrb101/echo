@@ -74,9 +74,8 @@ pub async fn parse_sse_stream(response: reqwest::Response, tx: mpsc::Sender<Stre
                 if payload.trim() == "[DONE]" {
                     // Emit any accumulated tool calls
                     for (_, acc) in tool_accumulators.drain() {
-                        let arguments: serde_json::Value =
-                            serde_json::from_str(&acc.arguments)
-                                .unwrap_or(serde_json::Value::Object(Default::default()));
+                        let arguments: serde_json::Value = serde_json::from_str(&acc.arguments)
+                            .unwrap_or(serde_json::Value::Object(Default::default()));
                         let _ = tx
                             .send(StreamEvent::ToolCallComplete {
                                 call: ToolCall {
@@ -117,9 +116,8 @@ pub async fn parse_sse_stream(response: reqwest::Response, tx: mpsc::Sender<Stre
                             // Handle tool calls
                             if let Some(tool_calls) = &choice.delta.tool_calls {
                                 for tc in tool_calls {
-                                    let acc = tool_accumulators
-                                        .entry(tc.index)
-                                        .or_insert_with(|| {
+                                    let acc =
+                                        tool_accumulators.entry(tc.index).or_insert_with(|| {
                                             has_tool_calls = true;
                                             ToolCallAccumulator {
                                                 id: tc.id.clone().unwrap_or_default(),

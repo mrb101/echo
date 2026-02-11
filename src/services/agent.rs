@@ -53,15 +53,23 @@ pub struct AgentLoopParams {
     pub auto_approve_read_tools: bool,
 }
 
-pub async fn run_agent_loop(
-    mut params: AgentLoopParams,
-    event_tx: mpsc::Sender<AgentEvent>,
-) {
+/// Send an event to the UI; if the receiver is dropped, abort the agent loop.
+macro_rules! send_or_return {
+    ($tx:expr, $event:expr) => {
+        if $tx.send($event).await.is_err() {
+            tracing::warn!("Agent event receiver dropped, stopping agent loop");
+            return;
+        }
+    };
+}
+
+pub async fn run_agent_loop(mut params: AgentLoopParams, event_tx: mpsc::Sender<AgentEvent>) {
     let mut iteration: u32 = 0;
     let mut total_tokens_in: Option<i64> = None;
     let mut total_tokens_out: Option<i64> = None;
     let mut full_text = String::new();
-    let mut auto_approved_tools: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut auto_approved_tools: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
 
     // Pre-populate auto-approved read tools
     if params.auto_approve_read_tools {
@@ -74,7 +82,9 @@ pub async fn run_agent_loop(
 
     loop {
         if params.cancel_token.is_cancelled() {
-            let _ = event_tx.send(AgentEvent::Error("Cancelled".to_string())).await;
+            let _ = event_tx
+                .send(AgentEvent::Error("Cancelled".to_string()))
+                .await;
             return;
         }
 
@@ -127,7 +137,7 @@ pub async fn run_agent_loop(
                     match event {
                         Some(StreamEvent::Token(token)) => {
                             iteration_text.push_str(&token);
-                            let _ = event_tx.send(AgentEvent::TextToken(token)).await;
+                            send_or_return!(event_tx, AgentEvent::TextToken(token));
                         }
                         Some(StreamEvent::ToolCallStart { .. }) => {
                             // Informational — we wait for ToolCallComplete
@@ -136,7 +146,7 @@ pub async fn run_agent_loop(
                             // Accumulation handled by provider stream parser
                         }
                         Some(StreamEvent::ToolCallComplete { call }) => {
-                            let _ = event_tx.send(AgentEvent::ToolCallReceived(call.clone())).await;
+                            send_or_return!(event_tx, AgentEvent::ToolCallReceived(call.clone()));
                             tool_calls.push(call);
                         }
                         Some(StreamEvent::Done { tokens_in, tokens_out, stop_reason: sr }) => {
@@ -188,9 +198,10 @@ pub async fn run_agent_loop(
                 && !auto_approved_tools.contains(&call.name);
 
             if needs_approval {
-                let _ = event_tx
-                    .send(AgentEvent::AwaitingApproval { call: call.clone() })
-                    .await;
+                send_or_return!(
+                    event_tx,
+                    AgentEvent::AwaitingApproval { call: call.clone() }
+                );
 
                 // Wait for approval decision
                 let decision = tokio::select! {
@@ -230,24 +241,26 @@ pub async fn run_agent_loop(
             }
 
             // Execute the tool
-            let _ = event_tx
-                .send(AgentEvent::ToolExecuting {
+            send_or_return!(
+                event_tx,
+                AgentEvent::ToolExecuting {
                     call_id: call.id.clone(),
                     tool_name: call.name.clone(),
-                })
-                .await;
+                }
+            );
 
             let start = Instant::now();
             let result = params.tools.execute(call).await;
             let duration_ms = start.elapsed().as_millis() as u64;
 
-            let _ = event_tx
-                .send(AgentEvent::ToolCompleted {
+            send_or_return!(
+                event_tx,
+                AgentEvent::ToolCompleted {
                     call_id: call.id.clone(),
                     result: result.clone(),
                     duration_ms,
-                })
-                .await;
+                }
+            );
 
             tool_results.push(result);
         }
@@ -257,7 +270,7 @@ pub async fn run_agent_loop(
             role: crate::models::Role::Assistant,
             content: iteration_text,
             images: Vec::new(),
-            tool_calls: tool_calls.clone(),
+            tool_calls,
             tool_results: Vec::new(),
         };
         params.request.messages.push(assistant_msg);

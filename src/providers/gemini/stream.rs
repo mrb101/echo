@@ -2,7 +2,7 @@ use futures::StreamExt;
 use tokio::sync::mpsc;
 
 use super::models::GeminiResponse;
-use crate::providers::types::{StreamEvent, StopReason, ToolCall};
+use crate::providers::types::{StopReason, StreamEvent, ToolCall};
 
 pub async fn parse_sse_stream(response: reqwest::Response, tx: mpsc::Sender<StreamEvent>) {
     let mut stream = response.bytes_stream();

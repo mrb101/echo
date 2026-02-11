@@ -65,7 +65,10 @@ impl Tool for ShellExecuteTool {
                 }
 
                 if result_text.is_empty() {
-                    result_text = format!("Command completed with exit code {}", output.status.code().unwrap_or(-1));
+                    result_text = format!(
+                        "Command completed with exit code {}",
+                        output.status.code().unwrap_or(-1)
+                    );
                 }
 
                 // Truncate if too long

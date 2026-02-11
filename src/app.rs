@@ -1147,9 +1147,7 @@ impl AsyncComponent for App {
             }
             AppCmd::AgentAwaitingApproval { tool_call } => {
                 let dialog = ToolApprovalDialog::builder()
-                    .launch(ToolApprovalInit {
-                        tool_call,
-                    })
+                    .launch(ToolApprovalInit { tool_call })
                     .forward(sender.input_sender(), |output| match output {
                         ToolApprovalOutput::Decision(decision) => AppMsg::ApproveToolCall(decision),
                     });
@@ -1453,7 +1451,7 @@ impl App {
                 message_id: user_msg_id.clone(),
                 mime_type: img.mime_type.clone(),
                 filename: None,
-                data: img.data.clone(),
+                data: img.data.to_vec(),
                 created_at: now,
             })
             .collect();
@@ -1522,7 +1520,7 @@ impl App {
                     message_id: user_msg_id.clone(),
                     mime_type: img.mime_type.clone(),
                     filename: None,
-                    data: img.data.clone(),
+                    data: img.data.to_vec(),
                     created_at: Utc::now(),
                 };
                 if let Err(e) = self.db.insert_attachment(&attachment).await {
@@ -1772,9 +1770,7 @@ impl App {
                             }
                             AgentEvent::ToolCallReceived(call) => {
                                 tool_call_map.insert(call.id.clone(), call.clone());
-                                let _ = out.send(AppCmd::AgentToolCall {
-                                    tool_call: call,
-                                });
+                                let _ = out.send(AppCmd::AgentToolCall { tool_call: call });
                             }
                             AgentEvent::ToolExecuting { call_id, tool_name } => {
                                 let _ = out.send(AppCmd::AgentToolCall {
@@ -1790,9 +1786,8 @@ impl App {
                                 result,
                                 duration_ms,
                             } => {
-                                let tool_call = tool_call_map
-                                    .remove(&call_id)
-                                    .unwrap_or_else(|| ToolCall {
+                                let tool_call =
+                                    tool_call_map.remove(&call_id).unwrap_or_else(|| ToolCall {
                                         id: call_id,
                                         name: String::new(),
                                         arguments: serde_json::Value::Null,
@@ -1804,9 +1799,7 @@ impl App {
                                 });
                             }
                             AgentEvent::AwaitingApproval { call } => {
-                                let _ = out.send(AppCmd::AgentAwaitingApproval {
-                                    tool_call: call,
-                                });
+                                let _ = out.send(AppCmd::AgentAwaitingApproval { tool_call: call });
                             }
                             AgentEvent::Done {
                                 full_content,

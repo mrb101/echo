@@ -56,7 +56,7 @@ pub enum StopReason {
 #[derive(Debug, Clone)]
 pub struct ImageAttachment {
     pub mime_type: String,
-    pub data: Vec<u8>,
+    pub data: bytes::Bytes,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

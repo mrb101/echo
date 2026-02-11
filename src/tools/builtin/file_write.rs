@@ -66,15 +66,79 @@ impl Tool for FileWriteTool {
             }
         }
 
-        match tokio::fs::write(path, content).await {
+        // Validate path - prevent writes to sensitive system directories
+        let resolved = if path.exists() {
+            match path.canonicalize() {
+                Ok(p) => p,
+                Err(e) => {
+                    return ToolResult {
+                        call_id: call.id.clone(),
+                        content: format!("Cannot resolve path '{}': {}", path.display(), e),
+                        is_error: true,
+                    };
+                }
+            }
+        } else {
+            // For new files, canonicalize the parent and join the filename
+            match path.parent().and_then(|p| {
+                let parent = if p.as_os_str().is_empty() {
+                    std::path::Path::new(".")
+                } else {
+                    p
+                };
+                parent.canonicalize().ok()
+            }) {
+                Some(parent) => {
+                    if let Some(filename) = path.file_name() {
+                        parent.join(filename)
+                    } else {
+                        return ToolResult {
+                            call_id: call.id.clone(),
+                            content: format!("Invalid path: no filename in '{}'", path.display()),
+                            is_error: true,
+                        };
+                    }
+                }
+                None => {
+                    return ToolResult {
+                        call_id: call.id.clone(),
+                        content: format!("Cannot resolve parent directory of '{}'", path.display()),
+                        is_error: true,
+                    };
+                }
+            }
+        };
+
+        const BLOCKED_PREFIXES: &[&str] = &[
+            "/etc", "/usr", "/bin", "/sbin", "/boot", "/proc", "/sys", "/dev",
+        ];
+        let resolved_str = resolved.to_string_lossy();
+        for prefix in BLOCKED_PREFIXES {
+            if resolved_str == *prefix || resolved_str.starts_with(&format!("{}/", prefix)) {
+                return ToolResult {
+                    call_id: call.id.clone(),
+                    content: format!(
+                        "Blocked: writing to '{}' is not allowed",
+                        resolved.display()
+                    ),
+                    is_error: true,
+                };
+            }
+        }
+
+        match tokio::fs::write(&resolved, content).await {
             Ok(()) => ToolResult {
                 call_id: call.id.clone(),
-                content: format!("Successfully wrote {} bytes to {}", content.len(), path.display()),
+                content: format!(
+                    "Successfully wrote {} bytes to {}",
+                    content.len(),
+                    resolved.display()
+                ),
                 is_error: false,
             },
             Err(e) => ToolResult {
                 call_id: call.id.clone(),
-                content: format!("Failed to write to '{}': {}", path.display(), e),
+                content: format!("Failed to write to '{}': {}", resolved.display(), e),
                 is_error: true,
             },
         }

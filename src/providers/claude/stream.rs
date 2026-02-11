@@ -81,29 +81,22 @@ pub async fn parse_sse_stream(response: reqwest::Response, tx: mpsc::Sender<Stre
                         }
                     }
                     ClaudeStreamEvent::ContentBlockStart {
-                        content_block,
+                        content_block: ClaudeResponseBlock::ToolUse { id, name, .. },
                         ..
                     } => {
-                        match content_block {
-                            ClaudeResponseBlock::ToolUse { id, name, .. } => {
-                                current_tool_id = Some(id.clone());
-                                current_tool_name = Some(name.clone());
-                                current_tool_json.clear();
-                                if tx
-                                    .send(StreamEvent::ToolCallStart {
-                                        id,
-                                        name,
-                                    })
-                                    .await
-                                    .is_err()
-                                {
-                                    return;
-                                }
-                            }
-                            _ => {
-                                // Text block start — nothing special needed
-                            }
+                        current_tool_id = Some(id.clone());
+                        current_tool_name = Some(name.clone());
+                        current_tool_json.clear();
+                        if tx
+                            .send(StreamEvent::ToolCallStart { id, name })
+                            .await
+                            .is_err()
+                        {
+                            return;
                         }
+                    }
+                    ClaudeStreamEvent::ContentBlockStart { .. } => {
+                        // Text block start — nothing special needed
                     }
                     ClaudeStreamEvent::ContentBlockDelta { delta, .. } => {
                         match delta {

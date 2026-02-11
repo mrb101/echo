@@ -241,7 +241,7 @@ impl Component for InputArea {
                         .drain(..)
                         .map(|pi| ImageAttachment {
                             mime_type: pi.mime_type,
-                            data: pi.data,
+                            data: bytes::Bytes::from(pi.data),
                         })
                         .collect();
 

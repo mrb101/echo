@@ -7,8 +7,8 @@ use super::models::*;
 use crate::models::{ProviderId, Role};
 use crate::providers::traits::AiProvider;
 use crate::providers::types::{
-    ChatMessage, ChatRequest, ChatResponse, ModelInfo, Feature,
-    ProviderError, StopReason, StreamEvent, ToolCall,
+    ChatMessage, ChatRequest, ChatResponse, Feature, ModelInfo, ProviderError, StopReason,
+    StreamEvent, ToolCall,
 };
 
 const DEFAULT_BASE_URL: &str = "https://api.anthropic.com/v1";

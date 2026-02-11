@@ -6,8 +6,8 @@ use super::models::*;
 use crate::models::{ProviderId, Role};
 use crate::providers::traits::AiProvider;
 use crate::providers::types::{
-    ChatMessage, ChatRequest, ChatResponse, ModelInfo, Feature,
-    ProviderError, StopReason, StreamEvent, ToolCall, ToolDefinition,
+    ChatMessage, ChatRequest, ChatResponse, Feature, ModelInfo, ProviderError, StopReason,
+    StreamEvent, ToolCall, ToolDefinition,
 };
 
 pub struct LocalProvider {
