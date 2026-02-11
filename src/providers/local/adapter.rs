@@ -5,7 +5,10 @@ use tokio::sync::mpsc;
 use super::models::*;
 use crate::models::{ProviderId, Role};
 use crate::providers::traits::AiProvider;
-use crate::providers::types::*;
+use crate::providers::types::{
+    ChatMessage, ChatRequest, ChatResponse, ModelInfo, Feature,
+    ProviderError, StopReason, StreamEvent, ToolCall, ToolDefinition,
+};
 
 pub struct LocalProvider {
     client: Client,
@@ -32,19 +35,83 @@ impl LocalProvider {
             if !prompt.is_empty() {
                 result.push(OpenAiMessage {
                     role: "system".to_string(),
-                    content: prompt.to_string(),
+                    content: Some(prompt.to_string()),
+                    tool_calls: None,
+                    tool_call_id: None,
                 });
             }
         }
 
         for msg in messages {
+            // Tool results: emit as role="tool" messages
+            if !msg.tool_results.is_empty() {
+                for tr in &msg.tool_results {
+                    result.push(OpenAiMessage {
+                        role: "tool".to_string(),
+                        content: Some(tr.content.clone()),
+                        tool_calls: None,
+                        tool_call_id: Some(tr.call_id.clone()),
+                    });
+                }
+                continue;
+            }
+
+            // Assistant message with tool calls
+            if !msg.tool_calls.is_empty() {
+                let tool_calls: Vec<OpenAiToolCall> = msg
+                    .tool_calls
+                    .iter()
+                    .map(|tc| OpenAiToolCall {
+                        id: tc.id.clone(),
+                        call_type: "function".to_string(),
+                        function: OpenAiToolCallFunction {
+                            name: tc.name.clone(),
+                            arguments: serde_json::to_string(&tc.arguments).unwrap_or_default(),
+                        },
+                    })
+                    .collect();
+                result.push(OpenAiMessage {
+                    role: Self::translate_role(&msg.role).to_string(),
+                    content: if msg.content.is_empty() {
+                        None
+                    } else {
+                        Some(msg.content.clone())
+                    },
+                    tool_calls: Some(tool_calls),
+                    tool_call_id: None,
+                });
+                continue;
+            }
+
             result.push(OpenAiMessage {
                 role: Self::translate_role(&msg.role).to_string(),
-                content: msg.content.clone(),
+                content: Some(msg.content.clone()),
+                tool_calls: None,
+                tool_call_id: None,
             });
         }
 
         result
+    }
+
+    fn convert_tools(tools: &[ToolDefinition]) -> Option<Vec<OpenAiTool>> {
+        if tools.is_empty() {
+            None
+        } else {
+            Some(
+                tools
+                    .iter()
+                    .map(|t| OpenAiTool {
+                        tool_type: "function".to_string(),
+                        function: OpenAiFunction {
+                            name: t.name.clone(),
+                            description: t.description.clone(),
+                            parameters: t.parameters.clone(),
+                        },
+                    })
+                    .collect(),
+            )
+        }
     }
 
     fn build_auth_header(api_key: &str) -> Option<String> {
@@ -135,6 +202,7 @@ impl AiProvider for LocalProvider {
             stream: false,
             temperature: request.temperature,
             max_tokens: request.max_tokens,
+            tools: Self::convert_tools(&request.tools),
         };
 
         let mut req = self
@@ -177,13 +245,36 @@ impl AiProvider for LocalProvider {
             .await
             .map_err(|e| ProviderError::InvalidResponse(e.to_string()))?;
 
-        let content = openai_response
-            .choices
-            .first()
-            .map(|c| c.message.content.clone())
+        let choice = openai_response.choices.first();
+        let content = choice
+            .and_then(|c| c.message.content.clone())
             .unwrap_or_default();
 
-        if content.is_empty() {
+        let tool_calls: Vec<ToolCall> = choice
+            .and_then(|c| c.message.tool_calls.as_ref())
+            .map(|tcs| {
+                tcs.iter()
+                    .filter_map(|tc| {
+                        let args: serde_json::Value =
+                            serde_json::from_str(&tc.function.arguments).ok()?;
+                        Some(ToolCall {
+                            id: tc.id.clone(),
+                            name: tc.function.name.clone(),
+                            arguments: args,
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let stop_reason = match choice.and_then(|c| c.finish_reason.as_deref()) {
+            Some("tool_calls") => Some(StopReason::ToolUse),
+            Some("length") => Some(StopReason::MaxTokens),
+            _ if !tool_calls.is_empty() => Some(StopReason::ToolUse),
+            _ => Some(StopReason::EndTurn),
+        };
+
+        if content.is_empty() && tool_calls.is_empty() {
             return Err(ProviderError::InvalidResponse(
                 "No content in response".to_string(),
             ));
@@ -199,6 +290,8 @@ impl AiProvider for LocalProvider {
             model: request.model,
             tokens_in,
             tokens_out,
+            tool_calls,
+            stop_reason,
         })
     }
 
@@ -223,6 +316,7 @@ impl AiProvider for LocalProvider {
             stream: true,
             temperature: request.temperature,
             max_tokens: request.max_tokens,
+            tools: Self::convert_tools(&request.tools),
         };
 
         let mut req = self

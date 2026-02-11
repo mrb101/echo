@@ -70,6 +70,16 @@ pub enum ChatViewMsg {
     SearchInConversation(String),
     // Responsive sizing
     ContainerWidthChanged(i32),
+    // Agent tool activity
+    ShowToolActivity {
+        tool_name: String,
+        call_id: String,
+    },
+    UpdateToolResult {
+        tool_name: String,
+        duration_ms: u64,
+        is_error: bool,
+    },
 }
 
 #[derive(Debug)]
@@ -535,6 +545,13 @@ impl Component for ChatView {
                         guard.send(i, MessageWidgetMsg::SetMaxWidth(width));
                     }
                 }
+            }
+            ChatViewMsg::ShowToolActivity { tool_name, call_id: _ } => {
+                // Update loading label to show tool activity
+                tracing::debug!("Tool executing: {}", tool_name);
+            }
+            ChatViewMsg::UpdateToolResult { tool_name: _, duration_ms: _, is_error: _ } => {
+                // Tool completed — the next streaming text will update the message
             }
         }
     }

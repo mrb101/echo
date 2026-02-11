@@ -3,6 +3,7 @@ use std::sync::Arc;
 use adw::prelude::*;
 use chrono::Utc;
 use relm4::prelude::*;
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -11,14 +12,18 @@ use crate::models::{Account, Conversation, Message, ProviderId, Role};
 use crate::providers::claude::ClaudeProvider;
 use crate::providers::gemini::GeminiProvider;
 use crate::providers::local::LocalProvider;
+use crate::providers::types::ToolCall;
 use crate::providers::ProviderRouter;
+use crate::services::agent::{AgentEvent, AgentLoopParams, ApprovalDecision};
 use crate::services::chat::{self, ChatDispatchParams, StreamResult};
 use crate::services::settings::AppSettings;
 use crate::services::{AccountService, Database, KeyringService, SettingsService};
+use crate::tools::ToolRegistry;
 use crate::ui::account_selector::{AccountSelector, AccountSelectorMsg, AccountSelectorOutput};
 use crate::ui::chat_view::{ChatView, ChatViewMsg, ChatViewOutput};
 use crate::ui::dialogs::account_setup::AccountSetupDialog;
 use crate::ui::dialogs::system_prompt::{SystemPromptDialog, SystemPromptInit, SystemPromptOutput};
+use crate::ui::dialogs::tool_approval::{ToolApprovalDialog, ToolApprovalInit, ToolApprovalOutput};
 use crate::ui::onboarding::OnboardingWindow;
 use crate::ui::preferences::accounts_page::{AccountsPage, AccountsPageMsg};
 use crate::ui::preferences::appearance_page::{apply_color_scheme, AppearancePage};
@@ -50,6 +55,10 @@ pub struct App {
     streaming_message_id: Option<String>,
     // Settings
     settings: AppSettings,
+    // Agentic
+    tool_registry: Arc<ToolRegistry>,
+    agent_approval_tx: Option<mpsc::Sender<ApprovalDecision>>,
+    tool_approval_dialog: Option<AsyncController<ToolApprovalDialog>>,
 }
 
 #[derive(Debug)]
@@ -90,6 +99,7 @@ pub enum AppMsg {
     TogglePin(String, bool),     // id, new_pinned_state
     ShowShortcuts,
     QuickSwitch,
+    ApproveToolCall(ApprovalDecision),
 }
 
 #[derive(Debug)]
@@ -137,6 +147,39 @@ pub enum AppCmd {
     LocalModelsDiscovered {
         account_id: String,
         models: Vec<String>,
+    },
+    // Agent
+    AgentToolCall {
+        conversation_id: String,
+        message_id: String,
+        tool_call: ToolCall,
+    },
+    AgentToolCompleted {
+        conversation_id: String,
+        message_id: String,
+        tool_name: String,
+        duration_ms: u64,
+        is_error: bool,
+    },
+    AgentAwaitingApproval {
+        conversation_id: String,
+        tool_call: ToolCall,
+    },
+    AgentDone {
+        conversation_id: String,
+        message_id: String,
+        full_content: String,
+        model: String,
+        tokens_in: Option<i64>,
+        tokens_out: Option<i64>,
+        account_id: String,
+        tool_call_count: u32,
+        iteration_count: u32,
+    },
+    AgentError {
+        conversation_id: String,
+        message_id: String,
+        error: String,
     },
 }
 
@@ -205,6 +248,11 @@ impl AsyncComponent for App {
         router.register(Arc::new(ClaudeProvider::new()));
         router.register(Arc::new(LocalProvider::new()));
         let router = Arc::new(router);
+
+        // Initialize tool registry with built-in tools
+        let mut tool_registry = ToolRegistry::new();
+        crate::tools::builtin::register_all(&mut tool_registry);
+        let tool_registry = Arc::new(tool_registry);
 
         let toast_overlay = adw::ToastOverlay::new();
         toast_overlay.set_hexpand(true);
@@ -357,6 +405,9 @@ impl AsyncComponent for App {
             stream_cancel_token: None,
             streaming_message_id: None,
             settings: AppSettings::default(),
+            tool_registry,
+            agent_approval_tx: None,
+            tool_approval_dialog: None,
         };
 
         let widgets = view_output!();
@@ -816,6 +867,13 @@ impl AsyncComponent for App {
             AppMsg::QuickSwitch => {
                 self.account_selector.emit(AccountSelectorMsg::GrabFocus);
             }
+            AppMsg::ApproveToolCall(decision) => {
+                self.tool_approval_dialog = None;
+                if let Some(tx) = &self.agent_approval_tx {
+                    let tx = tx.clone();
+                    let _ = tx.try_send(decision);
+                }
+            }
         }
     }
 
@@ -903,6 +961,7 @@ impl AsyncComponent for App {
                     is_active: true,
                     created_at: now,
                     attachments: Vec::new(),
+                    metadata: None,
                 };
 
                 if let Err(e) = self.db.insert_message(&assistant_msg).await {
@@ -1017,6 +1076,7 @@ impl AsyncComponent for App {
                     is_active: true,
                     created_at: now,
                     attachments: Vec::new(),
+                    metadata: None,
                 };
 
                 if let Err(e) = self.db.insert_message(&assistant_msg).await {
@@ -1058,6 +1118,110 @@ impl AsyncComponent for App {
             AppCmd::LocalModelsDiscovered { account_id, models } => {
                 self.account_selector
                     .emit(AccountSelectorMsg::SetLocalModels(account_id, models));
+            }
+            // Agent commands
+            AppCmd::AgentToolCall {
+                conversation_id: _,
+                message_id: _,
+                tool_call,
+            } => {
+                self.chat_view.emit(ChatViewMsg::ShowToolActivity {
+                    tool_name: tool_call.name,
+                    call_id: tool_call.id,
+                });
+            }
+            AppCmd::AgentToolCompleted {
+                conversation_id: _,
+                message_id: _,
+                tool_name,
+                duration_ms,
+                is_error,
+            } => {
+                self.chat_view.emit(ChatViewMsg::UpdateToolResult {
+                    tool_name,
+                    duration_ms,
+                    is_error,
+                });
+            }
+            AppCmd::AgentAwaitingApproval {
+                conversation_id: _,
+                tool_call,
+            } => {
+                let dialog = ToolApprovalDialog::builder()
+                    .launch(ToolApprovalInit {
+                        tool_call,
+                    })
+                    .forward(sender.input_sender(), |output| match output {
+                        ToolApprovalOutput::Decision(decision) => AppMsg::ApproveToolCall(decision),
+                    });
+                dialog.widget().set_transient_for(Some(_root));
+                dialog.widget().present();
+                self.tool_approval_dialog = Some(dialog);
+            }
+            AppCmd::AgentDone {
+                conversation_id,
+                message_id,
+                full_content,
+                model,
+                tokens_in,
+                tokens_out,
+                account_id,
+                tool_call_count: _,
+                iteration_count: _,
+            } => {
+                self.stream_cancel_token = None;
+                self.streaming_message_id = None;
+                self.agent_approval_tx = None;
+
+                // Save the final message to DB
+                let now = Utc::now();
+                let assistant_msg = Message {
+                    id: message_id.clone(),
+                    conversation_id: conversation_id.clone(),
+                    role: Role::Assistant,
+                    content: full_content,
+                    model: Some(model),
+                    tokens_in,
+                    tokens_out,
+                    parent_message_id: None,
+                    is_active: true,
+                    created_at: now,
+                    attachments: Vec::new(),
+                    metadata: None,
+                };
+
+                if let Err(e) = self.db.insert_message(&assistant_msg).await {
+                    tracing::error!("Failed to save agent message: {}", e);
+                }
+
+                let _ = self
+                    .db
+                    .update_conversation_timestamp(&conversation_id)
+                    .await;
+
+                if let (Some(ti), Some(to)) = (tokens_in, tokens_out) {
+                    let _ = self.db.update_account_usage(&account_id, ti, to).await;
+                }
+
+                self.chat_view
+                    .emit(ChatViewMsg::StreamingComplete(message_id.clone()));
+                self.chat_view.emit(ChatViewMsg::SetMessageTokens(
+                    message_id, tokens_in, tokens_out,
+                ));
+                self.chat_view.emit(ChatViewMsg::SetLoading(false));
+            }
+            AppCmd::AgentError {
+                conversation_id: _,
+                message_id,
+                error,
+            } => {
+                self.stream_cancel_token = None;
+                self.streaming_message_id = None;
+                self.agent_approval_tx = None;
+
+                self.show_toast(&format!("Agent error: {}", error));
+                self.chat_view.emit(ChatViewMsg::RemoveMessage(message_id));
+                self.chat_view.emit(ChatViewMsg::SetLoading(false));
             }
         }
     }
@@ -1282,6 +1446,7 @@ impl App {
             is_active: true,
             created_at: now,
             attachments: msg_attachments,
+            metadata: None,
         };
 
         if let Err(e) = self.db.insert_message(&user_msg).await {
@@ -1506,10 +1671,141 @@ impl App {
 
     fn dispatch_ai_request(
         &mut self,
-        params: ChatDispatchParams,
+        mut params: ChatDispatchParams,
         sender: AsyncComponentSender<Self>,
     ) {
         let router = self.router.clone();
+
+        // Agentic mode: if enabled and tools are available
+        if self.settings.agentic_enabled && !self.tool_registry.is_empty() {
+            let message_id = chat::new_message_id();
+            self.streaming_message_id = Some(message_id.clone());
+
+            let placeholder = Message {
+                id: message_id.clone(),
+                conversation_id: params.conversation_id.clone(),
+                role: Role::Assistant,
+                content: String::new(),
+                model: Some(params.model_name.clone()),
+                tokens_in: None,
+                tokens_out: None,
+                parent_message_id: None,
+                is_active: true,
+                created_at: Utc::now(),
+                attachments: Vec::new(),
+                metadata: None,
+            };
+            self.chat_view
+                .emit(ChatViewMsg::AddStreamingMessage(placeholder));
+
+            let cancel_token = CancellationToken::new();
+            self.stream_cancel_token = Some(cancel_token.clone());
+
+            let (approval_tx, approval_rx) = mpsc::channel::<ApprovalDecision>(1);
+            self.agent_approval_tx = Some(approval_tx);
+
+            let tools = self.tool_registry.clone();
+            let conv_id = params.conversation_id.clone();
+            let acc_id = params.account_id.clone();
+            let model = params.model_name.clone();
+            let max_iterations = self.settings.max_agent_iterations;
+            let auto_approve_read = self.settings.auto_approve_read_tools;
+
+            // Inject tool definitions into the request
+            params.request.tools = tools.definitions();
+
+            let agent_params = AgentLoopParams {
+                request: params.request,
+                provider_id: params.provider,
+                tools,
+                router,
+                cancel_token,
+                max_iterations,
+                approval_rx,
+                auto_approve_read_tools: auto_approve_read,
+            };
+
+            sender.command(move |out, _| {
+                Box::pin(async move {
+                    let (event_tx, mut event_rx) = mpsc::channel::<AgentEvent>(64);
+
+                    tokio::spawn(async move {
+                        crate::services::agent::run_agent_loop(agent_params, event_tx).await;
+                    });
+
+                    let mut accumulated_text = String::new();
+                    while let Some(event) = event_rx.recv().await {
+                        match event {
+                            AgentEvent::TextToken(token) => {
+                                accumulated_text.push_str(&token);
+                                let _ = out.send(AppCmd::StreamToken {
+                                    _conversation_id: conv_id.clone(),
+                                    message_id: message_id.clone(),
+                                    token: accumulated_text.clone(),
+                                });
+                            }
+                            AgentEvent::ToolCallReceived(call) => {
+                                let _ = out.send(AppCmd::AgentToolCall {
+                                    conversation_id: conv_id.clone(),
+                                    message_id: message_id.clone(),
+                                    tool_call: call,
+                                });
+                            }
+                            AgentEvent::ToolExecuting { .. } => {}
+                            AgentEvent::ToolCompleted {
+                                call_id: _,
+                                result,
+                                duration_ms,
+                            } => {
+                                let _ = out.send(AppCmd::AgentToolCompleted {
+                                    conversation_id: conv_id.clone(),
+                                    message_id: message_id.clone(),
+                                    tool_name: String::new(),
+                                    duration_ms,
+                                    is_error: result.is_error,
+                                });
+                            }
+                            AgentEvent::AwaitingApproval { call } => {
+                                let _ = out.send(AppCmd::AgentAwaitingApproval {
+                                    conversation_id: conv_id.clone(),
+                                    tool_call: call,
+                                });
+                            }
+                            AgentEvent::Done {
+                                full_content,
+                                tokens_in,
+                                tokens_out,
+                                tool_call_count,
+                                iteration_count,
+                            } => {
+                                let _ = out.send(AppCmd::AgentDone {
+                                    conversation_id: conv_id.clone(),
+                                    message_id: message_id.clone(),
+                                    full_content,
+                                    model: model.clone(),
+                                    tokens_in,
+                                    tokens_out,
+                                    account_id: acc_id.clone(),
+                                    tool_call_count,
+                                    iteration_count,
+                                });
+                                return;
+                            }
+                            AgentEvent::Error(error) => {
+                                let _ = out.send(AppCmd::AgentError {
+                                    conversation_id: conv_id.clone(),
+                                    message_id: message_id.clone(),
+                                    error,
+                                });
+                                return;
+                            }
+                        }
+                    }
+                })
+            });
+
+            return;
+        }
 
         if self.settings.stream_responses {
             let message_id = chat::new_message_id();
@@ -1527,6 +1823,7 @@ impl App {
                 is_active: true,
                 created_at: Utc::now(),
                 attachments: Vec::new(),
+                metadata: None,
             };
             self.chat_view
                 .emit(ChatViewMsg::AddStreamingMessage(placeholder));

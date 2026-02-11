@@ -2,7 +2,7 @@ use futures::StreamExt;
 use tokio::sync::mpsc;
 
 use super::models::GeminiResponse;
-use crate::providers::types::StreamEvent;
+use crate::providers::types::{StreamEvent, StopReason, ToolCall};
 
 pub async fn parse_sse_stream(response: reqwest::Response, tx: mpsc::Sender<StreamEvent>) {
     let mut stream = response.bytes_stream();
@@ -10,6 +10,7 @@ pub async fn parse_sse_stream(response: reqwest::Response, tx: mpsc::Sender<Stre
     let mut buffer = String::new();
     let mut last_tokens_in: Option<i64> = None;
     let mut last_tokens_out: Option<i64> = None;
+    let mut has_tool_calls = false;
 
     while let Some(chunk_result) = stream.next().await {
         let bytes = match chunk_result {
@@ -72,7 +73,7 @@ pub async fn parse_sse_stream(response: reqwest::Response, tx: mpsc::Sender<Stre
             // Parse the JSON payload
             match serde_json::from_str::<GeminiResponse>(&data) {
                 Ok(response) => {
-                    // Extract text from response
+                    // Extract text and function calls from response
                     if let Some(candidates) = &response.candidates {
                         if let Some(candidate) = candidates.first() {
                             if let Some(content) = &candidate.content {
@@ -81,6 +82,21 @@ pub async fn parse_sse_stream(response: reqwest::Response, tx: mpsc::Sender<Stre
                                         if tx.send(StreamEvent::Token(text.clone())).await.is_err()
                                         {
                                             return; // receiver dropped
+                                        }
+                                    }
+                                    if let Some(fc) = &part.function_call {
+                                        has_tool_calls = true;
+                                        let call = ToolCall {
+                                            id: uuid::Uuid::new_v4().to_string(),
+                                            name: fc.name.clone(),
+                                            arguments: fc.args.clone(),
+                                        };
+                                        if tx
+                                            .send(StreamEvent::ToolCallComplete { call })
+                                            .await
+                                            .is_err()
+                                        {
+                                            return;
                                         }
                                     }
                                 }
@@ -117,10 +133,16 @@ pub async fn parse_sse_stream(response: reqwest::Response, tx: mpsc::Sender<Stre
     }
 
     // Send done event with accumulated usage
+    let stop_reason = if has_tool_calls {
+        Some(StopReason::ToolUse)
+    } else {
+        Some(StopReason::EndTurn)
+    };
     let _ = tx
         .send(StreamEvent::Done {
             tokens_in: last_tokens_in,
             tokens_out: last_tokens_out,
+            stop_reason,
         })
         .await;
 }

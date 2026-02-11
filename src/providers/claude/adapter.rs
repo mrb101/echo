@@ -6,7 +6,10 @@ use tokio::sync::mpsc;
 use super::models::*;
 use crate::models::{ProviderId, Role};
 use crate::providers::traits::AiProvider;
-use crate::providers::types::*;
+use crate::providers::types::{
+    ChatMessage, ChatRequest, ChatResponse, ModelInfo, Feature,
+    ProviderError, StopReason, StreamEvent, ToolCall,
+};
 
 const DEFAULT_BASE_URL: &str = "https://api.anthropic.com/v1";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
@@ -49,41 +52,104 @@ impl ClaudeProvider {
     }
 
     fn build_messages(messages: &[ChatMessage]) -> Vec<ClaudeMessage> {
-        messages
-            .iter()
-            .map(|msg| {
-                if msg.images.is_empty() {
-                    // Text-only: use simple string content
-                    ClaudeMessage {
-                        role: Self::translate_role(&msg.role).to_string(),
-                        content: ClaudeContent::Text(msg.content.clone()),
-                    }
-                } else {
-                    // Has images: use content block array
-                    let mut blocks = Vec::new();
+        let mut result = Vec::new();
 
-                    for img in &msg.images {
-                        let b64 = base64::engine::general_purpose::STANDARD.encode(&img.data);
-                        blocks.push(ClaudeContentBlock::Image {
-                            source: ClaudeImageSource {
-                                source_type: "base64".to_string(),
-                                media_type: img.mime_type.clone(),
-                                data: b64,
-                            },
-                        });
-                    }
+        for msg in messages {
+            // If this message carries tool results, emit them as a user message
+            if !msg.tool_results.is_empty() {
+                let blocks: Vec<ClaudeContentBlock> = msg
+                    .tool_results
+                    .iter()
+                    .map(|tr| ClaudeContentBlock::ToolResult {
+                        tool_use_id: tr.call_id.clone(),
+                        content: tr.content.clone(),
+                        is_error: if tr.is_error { Some(true) } else { None },
+                    })
+                    .collect();
+                result.push(ClaudeMessage {
+                    role: "user".to_string(),
+                    content: ClaudeContent::Blocks(blocks),
+                });
+                continue;
+            }
 
+            // If this is an assistant message with tool calls, emit tool_use blocks
+            if !msg.tool_calls.is_empty() {
+                let mut blocks = Vec::new();
+                if !msg.content.is_empty() {
                     blocks.push(ClaudeContentBlock::Text {
                         text: msg.content.clone(),
                     });
-
-                    ClaudeMessage {
-                        role: Self::translate_role(&msg.role).to_string(),
-                        content: ClaudeContent::Blocks(blocks),
-                    }
                 }
-            })
-            .collect()
+                for tc in &msg.tool_calls {
+                    blocks.push(ClaudeContentBlock::ToolUse {
+                        id: tc.id.clone(),
+                        name: tc.name.clone(),
+                        input: tc.arguments.clone(),
+                    });
+                }
+                result.push(ClaudeMessage {
+                    role: Self::translate_role(&msg.role).to_string(),
+                    content: ClaudeContent::Blocks(blocks),
+                });
+                continue;
+            }
+
+            // Regular message (text + optional images)
+            if msg.images.is_empty() {
+                result.push(ClaudeMessage {
+                    role: Self::translate_role(&msg.role).to_string(),
+                    content: ClaudeContent::Text(msg.content.clone()),
+                });
+            } else {
+                let mut blocks = Vec::new();
+                for img in &msg.images {
+                    let b64 = base64::engine::general_purpose::STANDARD.encode(&img.data);
+                    blocks.push(ClaudeContentBlock::Image {
+                        source: ClaudeImageSource {
+                            source_type: "base64".to_string(),
+                            media_type: img.mime_type.clone(),
+                            data: b64,
+                        },
+                    });
+                }
+                blocks.push(ClaudeContentBlock::Text {
+                    text: msg.content.clone(),
+                });
+                result.push(ClaudeMessage {
+                    role: Self::translate_role(&msg.role).to_string(),
+                    content: ClaudeContent::Blocks(blocks),
+                });
+            }
+        }
+
+        result
+    }
+
+    fn convert_tools(tools: &[crate::providers::types::ToolDefinition]) -> Option<Vec<ClaudeTool>> {
+        if tools.is_empty() {
+            None
+        } else {
+            Some(
+                tools
+                    .iter()
+                    .map(|t| ClaudeTool {
+                        name: t.name.clone(),
+                        description: t.description.clone(),
+                        input_schema: t.parameters.clone(),
+                    })
+                    .collect(),
+            )
+        }
+    }
+
+    fn map_stop_reason(reason: Option<&str>) -> Option<StopReason> {
+        match reason {
+            Some("end_turn") => Some(StopReason::EndTurn),
+            Some("tool_use") => Some(StopReason::ToolUse),
+            Some("max_tokens") => Some(StopReason::MaxTokens),
+            _ => None,
+        }
     }
 
     fn max_tokens(request: &ChatRequest) -> u32 {
@@ -185,6 +251,7 @@ impl AiProvider for ClaudeProvider {
             system: request.system_prompt.clone(),
             temperature: request.temperature,
             stream: None,
+            tools: Self::convert_tools(&request.tools),
         };
 
         let response = self
@@ -223,16 +290,26 @@ impl AiProvider for ClaudeProvider {
             .await
             .map_err(|e| ProviderError::InvalidResponse(e.to_string()))?;
 
-        let content = claude_response
-            .content
-            .into_iter()
-            .map(|block| match block {
-                ClaudeResponseBlock::Text { text } => text,
-            })
-            .collect::<Vec<_>>()
-            .join("");
+        let mut content_parts = Vec::new();
+        let mut tool_calls = Vec::new();
 
-        if content.is_empty() {
+        for block in claude_response.content {
+            match block {
+                ClaudeResponseBlock::Text { text } => content_parts.push(text),
+                ClaudeResponseBlock::ToolUse { id, name, input } => {
+                    tool_calls.push(ToolCall {
+                        id,
+                        name,
+                        arguments: input,
+                    });
+                }
+            }
+        }
+
+        let content = content_parts.join("");
+        let stop_reason = Self::map_stop_reason(claude_response.stop_reason.as_deref());
+
+        if content.is_empty() && tool_calls.is_empty() {
             return Err(ProviderError::InvalidResponse(
                 "No content in response".to_string(),
             ));
@@ -248,6 +325,8 @@ impl AiProvider for ClaudeProvider {
             model: request.model,
             tokens_in,
             tokens_out,
+            tool_calls,
+            stop_reason,
         })
     }
 
@@ -270,6 +349,7 @@ impl AiProvider for ClaudeProvider {
             system: request.system_prompt.clone(),
             temperature: request.temperature,
             stream: Some(true),
+            tools: Self::convert_tools(&request.tools),
         };
 
         let response = self

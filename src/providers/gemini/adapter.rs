@@ -6,7 +6,10 @@ use tokio::sync::mpsc;
 use super::models::*;
 use crate::models::{ProviderId, Role};
 use crate::providers::traits::AiProvider;
-use crate::providers::types::*;
+use crate::providers::types::{
+    ChatMessage, ChatRequest, ChatResponse, ModelInfo, Feature,
+    ProviderError, StopReason, StreamEvent, ToolCall, ToolDefinition,
+};
 
 const DEFAULT_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -44,35 +47,111 @@ impl GeminiProvider {
     }
 
     fn build_contents(messages: &[ChatMessage]) -> Vec<GeminiContent> {
-        messages
-            .iter()
-            .map(|msg| {
-                let mut parts = Vec::new();
+        let mut result = Vec::new();
 
-                // Add image parts first
-                for img in &msg.images {
-                    let b64 = base64::engine::general_purpose::STANDARD.encode(&img.data);
+        for msg in messages {
+            // Tool results: emit as a special "function" role message
+            if !msg.tool_results.is_empty() {
+                let parts = msg
+                    .tool_results
+                    .iter()
+                    .map(|tr| {
+                        let response_value = serde_json::json!({
+                            "result": tr.content,
+                            "is_error": tr.is_error,
+                        });
+                        GeminiPart {
+                            text: None,
+                            inline_data: None,
+                            function_call: None,
+                            function_response: Some(GeminiFunctionResponse {
+                                name: tr.call_id.clone(), // Gemini uses the function name here
+                                response: response_value,
+                            }),
+                        }
+                    })
+                    .collect();
+                result.push(GeminiContent {
+                    role: "function".to_string(),
+                    parts,
+                });
+                continue;
+            }
+
+            // Assistant message with tool calls
+            if !msg.tool_calls.is_empty() {
+                let mut parts = Vec::new();
+                if !msg.content.is_empty() {
                     parts.push(GeminiPart {
-                        text: None,
-                        inline_data: Some(GeminiInlineData {
-                            mime_type: img.mime_type.clone(),
-                            data: b64,
-                        }),
+                        text: Some(msg.content.clone()),
+                        inline_data: None,
+                        function_call: None,
+                        function_response: None,
                     });
                 }
-
-                // Add text part
-                parts.push(GeminiPart {
-                    text: Some(msg.content.clone()),
-                    inline_data: None,
-                });
-
-                GeminiContent {
+                for tc in &msg.tool_calls {
+                    parts.push(GeminiPart {
+                        text: None,
+                        inline_data: None,
+                        function_call: Some(GeminiFunctionCall {
+                            name: tc.name.clone(),
+                            args: tc.arguments.clone(),
+                        }),
+                        function_response: None,
+                    });
+                }
+                result.push(GeminiContent {
                     role: Self::translate_role(&msg.role).to_string(),
                     parts,
-                }
-            })
-            .collect()
+                });
+                continue;
+            }
+
+            // Regular message
+            let mut parts = Vec::new();
+            for img in &msg.images {
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&img.data);
+                parts.push(GeminiPart {
+                    text: None,
+                    inline_data: Some(GeminiInlineData {
+                        mime_type: img.mime_type.clone(),
+                        data: b64,
+                    }),
+                    function_call: None,
+                    function_response: None,
+                });
+            }
+            parts.push(GeminiPart {
+                text: Some(msg.content.clone()),
+                inline_data: None,
+                function_call: None,
+                function_response: None,
+            });
+            result.push(GeminiContent {
+                role: Self::translate_role(&msg.role).to_string(),
+                parts,
+            });
+        }
+
+        result
+    }
+
+    fn convert_tools(tools: &[ToolDefinition]) -> Option<Vec<GeminiToolConfig>> {
+        if tools.is_empty() {
+            None
+        } else {
+            let declarations = tools
+                .iter()
+                .map(|t| GeminiFunctionDeclaration {
+                    name: t.name.clone(),
+                    description: t.description.clone(),
+                    parameters: t.parameters.clone(),
+                })
+                .collect();
+            Some(vec![GeminiToolConfig {
+                function_declarations: declarations,
+            }])
+        }
     }
 }
 
@@ -152,6 +231,8 @@ impl AiProvider for GeminiProvider {
             parts: vec![GeminiPart {
                 text: Some(prompt.clone()),
                 inline_data: None,
+                function_call: None,
+                function_response: None,
             }],
         });
 
@@ -159,6 +240,7 @@ impl AiProvider for GeminiProvider {
             contents,
             system_instruction,
             generation_config,
+            tools: Self::convert_tools(&request.tools),
         };
 
         let response = self
@@ -201,12 +283,38 @@ impl AiProvider for GeminiProvider {
             ));
         }
 
-        let content = gemini_response
-            .candidates
-            .and_then(|c| c.into_iter().next())
-            .and_then(|c| c.content)
-            .and_then(|c| c.parts.into_iter().filter_map(|p| p.text).next())
-            .ok_or_else(|| ProviderError::InvalidResponse("No content in response".to_string()))?;
+        let mut content_parts = Vec::new();
+        let mut tool_calls = Vec::new();
+
+        if let Some(candidates) = gemini_response.candidates {
+            if let Some(candidate) = candidates.into_iter().next() {
+                if let Some(content) = candidate.content {
+                    for part in content.parts {
+                        if let Some(text) = part.text {
+                            content_parts.push(text);
+                        }
+                        if let Some(fc) = part.function_call {
+                            tool_calls.push(ToolCall {
+                                id: uuid::Uuid::new_v4().to_string(),
+                                name: fc.name,
+                                arguments: fc.args,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        let content = content_parts.join("");
+        let stop_reason = if !tool_calls.is_empty() {
+            Some(StopReason::ToolUse)
+        } else {
+            Some(StopReason::EndTurn)
+        };
+
+        if content.is_empty() && tool_calls.is_empty() {
+            return Err(ProviderError::InvalidResponse("No content in response".to_string()));
+        }
 
         let (tokens_in, tokens_out) = gemini_response
             .usage_metadata
@@ -218,6 +326,8 @@ impl AiProvider for GeminiProvider {
             model: request.model,
             tokens_in,
             tokens_out,
+            tool_calls,
+            stop_reason,
         })
     }
 
@@ -245,6 +355,8 @@ impl AiProvider for GeminiProvider {
             parts: vec![GeminiPart {
                 text: Some(prompt.clone()),
                 inline_data: None,
+                function_call: None,
+                function_response: None,
             }],
         });
 
@@ -252,6 +364,7 @@ impl AiProvider for GeminiProvider {
             contents,
             system_instruction,
             generation_config,
+            tools: Self::convert_tools(&request.tools),
         };
 
         let response = self

@@ -9,6 +9,18 @@ use tokio::task;
 use crate::models::{Account, AccountStatus, Attachment, Conversation, Message, ProviderId, Role};
 
 #[derive(Debug, Clone)]
+pub struct ToolExecution {
+    pub id: String,
+    pub message_id: String,
+    pub tool_name: String,
+    pub arguments: String,
+    pub result: Option<String>,
+    pub is_error: bool,
+    pub duration_ms: Option<i64>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
 pub struct Database {
     conn: Arc<Mutex<Connection>>,
 }
@@ -172,6 +184,27 @@ impl Database {
                 "ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
 
                  UPDATE schema_version SET version = 5;",
+            )?;
+        }
+
+        if version < 6 {
+            conn.execute_batch(
+                "ALTER TABLE messages ADD COLUMN metadata TEXT;
+
+                 CREATE TABLE tool_executions (
+                     id TEXT PRIMARY KEY,
+                     message_id TEXT NOT NULL,
+                     tool_name TEXT NOT NULL,
+                     arguments TEXT NOT NULL,
+                     result TEXT,
+                     is_error INTEGER NOT NULL DEFAULT 0,
+                     duration_ms INTEGER,
+                     created_at TEXT NOT NULL,
+                     FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+                 );
+                 CREATE INDEX idx_tool_executions_message ON tool_executions(message_id);
+
+                 UPDATE schema_version SET version = 6;",
             )?;
         }
 
@@ -424,8 +457,8 @@ impl Database {
         task::spawn_blocking(move || {
             let conn = conn.lock().unwrap();
             conn.execute(
-                "INSERT INTO messages (id, conversation_id, role, content, model, tokens_in, tokens_out, parent_message_id, is_active, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                "INSERT INTO messages (id, conversation_id, role, content, model, tokens_in, tokens_out, parent_message_id, is_active, created_at, metadata)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 params![
                     msg.id,
                     msg.conversation_id,
@@ -437,6 +470,7 @@ impl Database {
                     msg.parent_message_id,
                     msg.is_active as i32,
                     msg.created_at.to_rfc3339(),
+                    msg.metadata,
                 ],
             )?;
             Ok(())
@@ -450,7 +484,7 @@ impl Database {
         task::spawn_blocking(move || {
             let conn = conn.lock().unwrap();
             let mut stmt = conn.prepare(
-                "SELECT id, conversation_id, role, content, model, tokens_in, tokens_out, parent_message_id, is_active, created_at
+                "SELECT id, conversation_id, role, content, model, tokens_in, tokens_out, parent_message_id, is_active, created_at, metadata
                  FROM messages WHERE conversation_id = ?1 AND is_active = 1 ORDER BY created_at ASC",
             )?;
             let messages = stmt
@@ -561,6 +595,77 @@ impl Database {
         .await?
     }
 
+    // --- Tool Executions ---
+
+    pub async fn insert_tool_execution(
+        &self,
+        id: &str,
+        message_id: &str,
+        tool_name: &str,
+        arguments: &str,
+        result: Option<&str>,
+        is_error: bool,
+        duration_ms: Option<i64>,
+    ) -> Result<()> {
+        let conn = self.conn.clone();
+        let id = id.to_string();
+        let message_id = message_id.to_string();
+        let tool_name = tool_name.to_string();
+        let arguments = arguments.to_string();
+        let result = result.map(|s| s.to_string());
+        task::spawn_blocking(move || {
+            let conn = conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO tool_executions (id, message_id, tool_name, arguments, result, is_error, duration_ms, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    id,
+                    message_id,
+                    tool_name,
+                    arguments,
+                    result,
+                    is_error as i32,
+                    duration_ms,
+                    Utc::now().to_rfc3339(),
+                ],
+            )?;
+            Ok(())
+        })
+        .await?
+    }
+
+    pub async fn list_tool_executions(&self, message_id: &str) -> Result<Vec<ToolExecution>> {
+        let conn = self.conn.clone();
+        let message_id = message_id.to_string();
+        task::spawn_blocking(move || {
+            let conn = conn.lock().unwrap();
+            let mut stmt = conn.prepare(
+                "SELECT id, message_id, tool_name, arguments, result, is_error, duration_ms, created_at
+                 FROM tool_executions WHERE message_id = ?1 ORDER BY created_at ASC",
+            )?;
+            let executions = stmt
+                .query_map(params![message_id], |row| {
+                    let is_error_int: i32 = row.get(5)?;
+                    let created_str: String = row.get(7)?;
+                    Ok(ToolExecution {
+                        id: row.get(0)?,
+                        message_id: row.get(1)?,
+                        tool_name: row.get(2)?,
+                        arguments: row.get(3)?,
+                        result: row.get(4)?,
+                        is_error: is_error_int != 0,
+                        duration_ms: row.get(6)?,
+                        created_at: DateTime::parse_from_rfc3339(&created_str)
+                            .unwrap()
+                            .with_timezone(&Utc),
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(executions)
+        })
+        .await?
+    }
+
     pub async fn get_conversation(&self, id: &str) -> Result<Option<Conversation>> {
         let conn = self.conn.clone();
         let id = id.to_string();
@@ -666,6 +771,7 @@ impl Database {
         let role_str: String = row.get(2)?;
         let is_active_int: i32 = row.get(8)?;
         let created_str: String = row.get(9)?;
+        let metadata: Option<String> = row.get(10).unwrap_or(None);
 
         Ok(Message {
             id: row.get(0)?,
@@ -680,6 +786,7 @@ impl Database {
             is_active: is_active_int != 0,
             created_at: DateTime::parse_from_rfc3339(&created_str)?.with_timezone(&Utc),
             attachments: Vec::new(),
+            metadata,
         })
     }
 
@@ -789,6 +896,7 @@ mod tests {
             is_active: true,
             created_at: now,
             attachments: Vec::new(),
+            metadata: None,
         };
         db.insert_message(&msg).await.unwrap();
 
