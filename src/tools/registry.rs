@@ -25,6 +25,7 @@ impl ToolRegistry {
         self.tools.values().map(|t| t.definition()).collect()
     }
 
+    #[allow(dead_code)]
     pub fn get(&self, name: &str) -> Option<&Arc<dyn Tool>> {
         self.tools.get(name)
     }

@@ -74,7 +74,6 @@ pub enum ChatViewMsg {
     // Agent tool activity
     ShowToolActivity {
         tool_name: String,
-        call_id: String,
     },
     UpdateToolResult {
         tool_name: String,
@@ -554,7 +553,7 @@ impl Component for ChatView {
                     }
                 }
             }
-            ChatViewMsg::ShowToolActivity { tool_name, call_id: _ } => {
+            ChatViewMsg::ShowToolActivity { tool_name } => {
                 self.thinking_label
                     .set_label(&format!("Running tool: {}...", tool_name));
             }

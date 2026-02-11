@@ -38,8 +38,6 @@ pub enum AgentEvent {
         full_content: String,
         tokens_in: Option<i64>,
         tokens_out: Option<i64>,
-        tool_call_count: u32,
-        iteration_count: u32,
     },
     Error(String),
 }
@@ -60,7 +58,6 @@ pub async fn run_agent_loop(
     event_tx: mpsc::Sender<AgentEvent>,
 ) {
     let mut iteration: u32 = 0;
-    let mut total_tool_calls: u32 = 0;
     let mut total_tokens_in: Option<i64> = None;
     let mut total_tokens_out: Option<i64> = None;
     let mut full_text = String::new();
@@ -123,8 +120,6 @@ pub async fn run_agent_loop(
                         full_content: full_text,
                         tokens_in: total_tokens_in,
                         tokens_out: total_tokens_out,
-                        tool_call_count: total_tool_calls,
-                        iteration_count: iteration,
                     }).await;
                     return;
                 }
@@ -179,8 +174,6 @@ pub async fn run_agent_loop(
                     full_content: full_text,
                     tokens_in: total_tokens_in,
                     tokens_out: total_tokens_out,
-                    tool_call_count: total_tool_calls,
-                    iteration_count: iteration,
                 })
                 .await;
             return;
@@ -190,8 +183,6 @@ pub async fn run_agent_loop(
         let mut tool_results: Vec<ToolResult> = Vec::new();
 
         for call in &tool_calls {
-            total_tool_calls += 1;
-
             // Check if approval is needed
             let needs_approval = params.tools.requires_approval(&call.name)
                 && !auto_approved_tools.contains(&call.name);
@@ -208,8 +199,6 @@ pub async fn run_agent_loop(
                             full_content: full_text,
                             tokens_in: total_tokens_in,
                             tokens_out: total_tokens_out,
-                            tool_call_count: total_tool_calls,
-                            iteration_count: iteration,
                         }).await;
                         return;
                     }

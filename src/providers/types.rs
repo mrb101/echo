@@ -99,6 +99,7 @@ impl std::fmt::Debug for ChatRequest {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum StreamEvent {
     Token(String),
     ToolCallStart {
@@ -121,6 +122,7 @@ pub enum StreamEvent {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ChatResponse {
     pub content: String,
     pub model: String,

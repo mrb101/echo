@@ -9,6 +9,7 @@ use tokio::task;
 use crate::models::{Account, AccountStatus, Attachment, Conversation, Message, ProviderId, Role};
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ToolExecution {
     pub id: String,
     pub message_id: String,
@@ -634,6 +635,7 @@ impl Database {
         .await?
     }
 
+    #[allow(dead_code)]
     pub async fn list_tool_executions(&self, message_id: &str) -> Result<Vec<ToolExecution>> {
         let conn = self.conn.clone();
         let message_id = message_id.to_string();

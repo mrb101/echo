@@ -114,6 +114,7 @@ pub struct OpenAiStreamToolCall {
     pub index: u32,
     pub id: Option<String>,
     #[serde(rename = "type")]
+    #[allow(dead_code)]
     pub call_type: Option<String>,
     pub function: Option<OpenAiStreamToolCallFunction>,
 }

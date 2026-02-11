@@ -60,6 +60,14 @@ pub struct App {
     tool_registry: Arc<ToolRegistry>,
     agent_approval_tx: Option<mpsc::Sender<ApprovalDecision>>,
     tool_approval_dialog: Option<AsyncController<ToolApprovalDialog>>,
+    pending_tool_executions: Vec<PendingToolExecution>,
+}
+
+/// Tool execution data buffered until the assistant message is saved to DB.
+struct PendingToolExecution {
+    tool_call: ToolCall,
+    result: ToolResult,
+    duration_ms: u64,
 }
 
 #[derive(Debug)]
@@ -151,19 +159,14 @@ pub enum AppCmd {
     },
     // Agent
     AgentToolCall {
-        conversation_id: String,
-        message_id: String,
         tool_call: ToolCall,
     },
     AgentToolCompleted {
-        conversation_id: String,
-        message_id: String,
         tool_call: ToolCall,
         result: ToolResult,
         duration_ms: u64,
     },
     AgentAwaitingApproval {
-        conversation_id: String,
         tool_call: ToolCall,
     },
     AgentDone {
@@ -174,11 +177,8 @@ pub enum AppCmd {
         tokens_in: Option<i64>,
         tokens_out: Option<i64>,
         account_id: String,
-        tool_call_count: u32,
-        iteration_count: u32,
     },
     AgentError {
-        conversation_id: String,
         message_id: String,
         error: String,
     },
@@ -409,6 +409,7 @@ impl AsyncComponent for App {
             tool_registry,
             agent_approval_tx: None,
             tool_approval_dialog: None,
+            pending_tool_executions: Vec::new(),
         };
 
         let widgets = view_output!();
@@ -1121,19 +1122,12 @@ impl AsyncComponent for App {
                     .emit(AccountSelectorMsg::SetLocalModels(account_id, models));
             }
             // Agent commands
-            AppCmd::AgentToolCall {
-                conversation_id: _,
-                message_id: _,
-                tool_call,
-            } => {
+            AppCmd::AgentToolCall { tool_call } => {
                 self.chat_view.emit(ChatViewMsg::ShowToolActivity {
                     tool_name: tool_call.name,
-                    call_id: tool_call.id,
                 });
             }
             AppCmd::AgentToolCompleted {
-                conversation_id: _,
-                message_id,
                 tool_call,
                 result,
                 duration_ms,
@@ -1144,35 +1138,14 @@ impl AsyncComponent for App {
                     is_error: result.is_error,
                 });
 
-                // Persist tool execution to database
-                let db = self.db.clone();
-                let exec_id = Uuid::new_v4().to_string();
-                let arguments = tool_call.arguments.to_string();
-                let result_text = Some(result.content.clone());
-                let is_error = result.is_error;
-                sender.command(move |_out, _| {
-                    Box::pin(async move {
-                        if let Err(e) = db
-                            .insert_tool_execution(
-                                &exec_id,
-                                &message_id,
-                                &tool_call.name,
-                                &arguments,
-                                result_text.as_deref(),
-                                is_error,
-                                Some(duration_ms as i64),
-                            )
-                            .await
-                        {
-                            tracing::error!("Failed to persist tool execution: {}", e);
-                        }
-                    })
+                // Buffer for persistence after the message is saved (FK constraint)
+                self.pending_tool_executions.push(PendingToolExecution {
+                    tool_call,
+                    result,
+                    duration_ms,
                 });
             }
-            AppCmd::AgentAwaitingApproval {
-                conversation_id: _,
-                tool_call,
-            } => {
+            AppCmd::AgentAwaitingApproval { tool_call } => {
                 let dialog = ToolApprovalDialog::builder()
                     .launch(ToolApprovalInit {
                         tool_call,
@@ -1192,8 +1165,6 @@ impl AsyncComponent for App {
                 tokens_in,
                 tokens_out,
                 account_id,
-                tool_call_count: _,
-                iteration_count: _,
             } => {
                 self.stream_cancel_token = None;
                 self.streaming_message_id = None;
@@ -1220,6 +1191,36 @@ impl AsyncComponent for App {
                     tracing::error!("Failed to save agent message: {}", e);
                 }
 
+                // Flush buffered tool executions now that the message exists in DB
+                let pending = std::mem::take(&mut self.pending_tool_executions);
+                if !pending.is_empty() {
+                    let db = self.db.clone();
+                    let msg_id = message_id.clone();
+                    sender.command(move |_out, _| {
+                        Box::pin(async move {
+                            for exec in pending {
+                                let exec_id = Uuid::new_v4().to_string();
+                                let arguments = exec.tool_call.arguments.to_string();
+                                let result_text = Some(exec.result.content.as_str());
+                                if let Err(e) = db
+                                    .insert_tool_execution(
+                                        &exec_id,
+                                        &msg_id,
+                                        &exec.tool_call.name,
+                                        &arguments,
+                                        result_text,
+                                        exec.result.is_error,
+                                        Some(exec.duration_ms as i64),
+                                    )
+                                    .await
+                                {
+                                    tracing::error!("Failed to persist tool execution: {}", e);
+                                }
+                            }
+                        })
+                    });
+                }
+
                 let _ = self
                     .db
                     .update_conversation_timestamp(&conversation_id)
@@ -1236,14 +1237,11 @@ impl AsyncComponent for App {
                 ));
                 self.chat_view.emit(ChatViewMsg::SetLoading(false));
             }
-            AppCmd::AgentError {
-                conversation_id: _,
-                message_id,
-                error,
-            } => {
+            AppCmd::AgentError { message_id, error } => {
                 self.stream_cancel_token = None;
                 self.streaming_message_id = None;
                 self.agent_approval_tx = None;
+                self.pending_tool_executions.clear();
 
                 self.show_toast(&format!("Agent error: {}", error));
                 self.chat_view.emit(ChatViewMsg::RemoveMessage(message_id));
@@ -1775,15 +1773,11 @@ impl App {
                             AgentEvent::ToolCallReceived(call) => {
                                 tool_call_map.insert(call.id.clone(), call.clone());
                                 let _ = out.send(AppCmd::AgentToolCall {
-                                    conversation_id: conv_id.clone(),
-                                    message_id: message_id.clone(),
                                     tool_call: call,
                                 });
                             }
                             AgentEvent::ToolExecuting { call_id, tool_name } => {
                                 let _ = out.send(AppCmd::AgentToolCall {
-                                    conversation_id: conv_id.clone(),
-                                    message_id: message_id.clone(),
                                     tool_call: ToolCall {
                                         id: call_id,
                                         name: tool_name,
@@ -1804,8 +1798,6 @@ impl App {
                                         arguments: serde_json::Value::Null,
                                     });
                                 let _ = out.send(AppCmd::AgentToolCompleted {
-                                    conversation_id: conv_id.clone(),
-                                    message_id: message_id.clone(),
                                     tool_call,
                                     result,
                                     duration_ms,
@@ -1813,7 +1805,6 @@ impl App {
                             }
                             AgentEvent::AwaitingApproval { call } => {
                                 let _ = out.send(AppCmd::AgentAwaitingApproval {
-                                    conversation_id: conv_id.clone(),
                                     tool_call: call,
                                 });
                             }
@@ -1821,8 +1812,6 @@ impl App {
                                 full_content,
                                 tokens_in,
                                 tokens_out,
-                                tool_call_count,
-                                iteration_count,
                             } => {
                                 let _ = out.send(AppCmd::AgentDone {
                                     conversation_id: conv_id.clone(),
@@ -1832,14 +1821,11 @@ impl App {
                                     tokens_in,
                                     tokens_out,
                                     account_id: acc_id.clone(),
-                                    tool_call_count,
-                                    iteration_count,
                                 });
                                 return;
                             }
                             AgentEvent::Error(error) => {
                                 let _ = out.send(AppCmd::AgentError {
-                                    conversation_id: conv_id.clone(),
                                     message_id: message_id.clone(),
                                     error,
                                 });
