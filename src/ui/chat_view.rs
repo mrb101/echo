@@ -19,6 +19,7 @@ pub struct ChatView {
     input_area: Controller<InputArea>,
     loading: bool,
     scrolled_window: gtk::ScrolledWindow,
+    thinking_label: gtk::Label,
     // Streaming state
     streaming_message_id: Option<String>,
     streaming_buffer: Rc<RefCell<Option<StreamBuffer>>>,
@@ -224,6 +225,7 @@ impl Component for ChatView {
             input_area,
             loading: false,
             scrolled_window: scrolled_window.clone(),
+            thinking_label: thinking_label.clone(),
             streaming_message_id: None,
             streaming_buffer: Rc::new(RefCell::new(None)),
             render_timer_active: Rc::new(RefCell::new(false)),
@@ -391,6 +393,9 @@ impl Component for ChatView {
             ChatViewMsg::SetLoading(loading) => {
                 self.loading = loading;
                 self.input_area.emit(InputAreaMsg::SetSending(loading));
+                if loading {
+                    self.thinking_label.set_label("Generating...");
+                }
             }
             ChatViewMsg::ScrollToBottom => {
                 self.user_scrolled_up = false;
@@ -484,6 +489,9 @@ impl Component for ChatView {
 
                 self.streaming_message_id = None;
                 *self.streaming_buffer.borrow_mut() = None;
+
+                // Reset thinking label for next use
+                self.thinking_label.set_label("Generating...");
             }
             ChatViewMsg::RemoveMessage(message_id) => {
                 // Stop render timer
@@ -547,11 +555,21 @@ impl Component for ChatView {
                 }
             }
             ChatViewMsg::ShowToolActivity { tool_name, call_id: _ } => {
-                // Update loading label to show tool activity
-                tracing::debug!("Tool executing: {}", tool_name);
+                self.thinking_label
+                    .set_label(&format!("Running tool: {}...", tool_name));
             }
-            ChatViewMsg::UpdateToolResult { tool_name: _, duration_ms: _, is_error: _ } => {
-                // Tool completed — the next streaming text will update the message
+            ChatViewMsg::UpdateToolResult {
+                tool_name,
+                duration_ms,
+                is_error,
+            } => {
+                if is_error {
+                    self.thinking_label
+                        .set_label(&format!("Tool {} failed", tool_name));
+                } else {
+                    self.thinking_label
+                        .set_label(&format!("Tool {} done ({}ms)", tool_name, duration_ms));
+                }
             }
         }
     }

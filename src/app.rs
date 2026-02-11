@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use adw::prelude::*;
@@ -12,7 +13,7 @@ use crate::models::{Account, Conversation, Message, ProviderId, Role};
 use crate::providers::claude::ClaudeProvider;
 use crate::providers::gemini::GeminiProvider;
 use crate::providers::local::LocalProvider;
-use crate::providers::types::ToolCall;
+use crate::providers::types::{ToolCall, ToolResult};
 use crate::providers::ProviderRouter;
 use crate::services::agent::{AgentEvent, AgentLoopParams, ApprovalDecision};
 use crate::services::chat::{self, ChatDispatchParams, StreamResult};
@@ -157,9 +158,9 @@ pub enum AppCmd {
     AgentToolCompleted {
         conversation_id: String,
         message_id: String,
-        tool_name: String,
+        tool_call: ToolCall,
+        result: ToolResult,
         duration_ms: u64,
-        is_error: bool,
     },
     AgentAwaitingApproval {
         conversation_id: String,
@@ -1132,15 +1133,40 @@ impl AsyncComponent for App {
             }
             AppCmd::AgentToolCompleted {
                 conversation_id: _,
-                message_id: _,
-                tool_name,
+                message_id,
+                tool_call,
+                result,
                 duration_ms,
-                is_error,
             } => {
                 self.chat_view.emit(ChatViewMsg::UpdateToolResult {
-                    tool_name,
+                    tool_name: tool_call.name.clone(),
                     duration_ms,
-                    is_error,
+                    is_error: result.is_error,
+                });
+
+                // Persist tool execution to database
+                let db = self.db.clone();
+                let exec_id = Uuid::new_v4().to_string();
+                let arguments = tool_call.arguments.to_string();
+                let result_text = Some(result.content.clone());
+                let is_error = result.is_error;
+                sender.command(move |_out, _| {
+                    Box::pin(async move {
+                        if let Err(e) = db
+                            .insert_tool_execution(
+                                &exec_id,
+                                &message_id,
+                                &tool_call.name,
+                                &arguments,
+                                result_text.as_deref(),
+                                is_error,
+                                Some(duration_ms as i64),
+                            )
+                            .await
+                        {
+                            tracing::error!("Failed to persist tool execution: {}", e);
+                        }
+                    })
                 });
             }
             AppCmd::AgentAwaitingApproval {
@@ -1734,6 +1760,8 @@ impl App {
                     });
 
                     let mut accumulated_text = String::new();
+                    let mut tool_call_map: HashMap<String, ToolCall> = HashMap::new();
+
                     while let Some(event) = event_rx.recv().await {
                         match event {
                             AgentEvent::TextToken(token) => {
@@ -1745,24 +1773,42 @@ impl App {
                                 });
                             }
                             AgentEvent::ToolCallReceived(call) => {
+                                tool_call_map.insert(call.id.clone(), call.clone());
                                 let _ = out.send(AppCmd::AgentToolCall {
                                     conversation_id: conv_id.clone(),
                                     message_id: message_id.clone(),
                                     tool_call: call,
                                 });
                             }
-                            AgentEvent::ToolExecuting { .. } => {}
+                            AgentEvent::ToolExecuting { call_id, tool_name } => {
+                                let _ = out.send(AppCmd::AgentToolCall {
+                                    conversation_id: conv_id.clone(),
+                                    message_id: message_id.clone(),
+                                    tool_call: ToolCall {
+                                        id: call_id,
+                                        name: tool_name,
+                                        arguments: serde_json::Value::Null,
+                                    },
+                                });
+                            }
                             AgentEvent::ToolCompleted {
-                                call_id: _,
+                                call_id,
                                 result,
                                 duration_ms,
                             } => {
+                                let tool_call = tool_call_map
+                                    .remove(&call_id)
+                                    .unwrap_or_else(|| ToolCall {
+                                        id: call_id,
+                                        name: String::new(),
+                                        arguments: serde_json::Value::Null,
+                                    });
                                 let _ = out.send(AppCmd::AgentToolCompleted {
                                     conversation_id: conv_id.clone(),
                                     message_id: message_id.clone(),
-                                    tool_name: String::new(),
+                                    tool_call,
+                                    result,
                                     duration_ms,
-                                    is_error: result.is_error,
                                 });
                             }
                             AgentEvent::AwaitingApproval { call } => {
