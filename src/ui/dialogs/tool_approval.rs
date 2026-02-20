@@ -24,6 +24,21 @@ pub enum ToolApprovalOutput {
     Decision(ApprovalDecision),
 }
 
+impl ToolApprovalDialog {
+    fn format_arguments(&self) -> String {
+        if self.tool_call.arguments.is_null() {
+            return "No arguments".to_string();
+        }
+        if let Some(obj) = self.tool_call.arguments.as_object() {
+            if obj.is_empty() {
+                return "No arguments".to_string();
+            }
+        }
+        serde_json::to_string_pretty(&self.tool_call.arguments)
+            .unwrap_or_else(|_| format!("{}", self.tool_call.arguments))
+    }
+}
+
 #[relm4::component(pub, async)]
 impl AsyncComponent for ToolApprovalDialog {
     type Init = ToolApprovalInit;
@@ -44,7 +59,7 @@ impl AsyncComponent for ToolApprovalDialog {
                 #[wrap(Some)]
                 set_content = &gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 16,
+                    set_spacing: 12,
                     set_margin_top: 16,
                     set_margin_bottom: 16,
                     set_margin_start: 16,
@@ -63,11 +78,30 @@ impl AsyncComponent for ToolApprovalDialog {
                             set_title: "Tool",
                             set_subtitle: &model.tool_call.name,
                         },
+                    },
 
-                        adw::ActionRow {
-                            set_title: "Arguments",
-                            set_subtitle: &format!("{}", model.tool_call.arguments),
-                            set_subtitle_lines: 3,
+                    gtk::Label {
+                        set_label: "Arguments",
+                        set_halign: gtk::Align::Start,
+                        add_css_class: "heading",
+                    },
+
+                    #[name = "args_scroll"]
+                    gtk::ScrolledWindow {
+                        set_vexpand: true,
+                        set_min_content_height: 80,
+
+                        #[name = "args_view"]
+                        gtk::TextView {
+                            set_editable: false,
+                            set_cursor_visible: false,
+                            set_monospace: true,
+                            set_wrap_mode: gtk::WrapMode::WordChar,
+                            set_top_margin: 8,
+                            set_bottom_margin: 8,
+                            set_left_margin: 8,
+                            set_right_margin: 8,
+                            add_css_class: "card",
                         },
                     },
 
@@ -75,8 +109,6 @@ impl AsyncComponent for ToolApprovalDialog {
                         set_orientation: gtk::Orientation::Horizontal,
                         set_spacing: 8,
                         set_halign: gtk::Align::End,
-                        set_valign: gtk::Align::End,
-                        set_vexpand: true,
 
                         gtk::Button {
                             set_label: "Deny",
@@ -109,6 +141,11 @@ impl AsyncComponent for ToolApprovalDialog {
             tool_call: init.tool_call,
         };
         let widgets = view_output!();
+
+        // Set arguments text in the TextView
+        let args_text = model.format_arguments();
+        widgets.args_view.buffer().set_text(&args_text);
+
         AsyncComponentParts { model, widgets }
     }
 

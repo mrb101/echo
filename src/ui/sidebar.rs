@@ -317,6 +317,7 @@ impl Component for Sidebar {
                 // Find the right insertion point: after "Today" header, or create one
                 let mut insert_at = None;
                 let today_group = date_group(&conversation.updated_at);
+                let inserted_index;
 
                 for i in 0..guard.len() {
                     if let Some(row) = guard.get(i) {
@@ -331,6 +332,7 @@ impl Component for Sidebar {
 
                 if let Some(idx) = insert_at {
                     guard.insert(idx, SidebarItem::Conversation(conversation));
+                    inserted_index = idx;
                 } else {
                     // Need to add the header too; find the first non-pinned header or end
                     let mut insert_header_at = 0;
@@ -360,9 +362,16 @@ impl Component for Sidebar {
                         insert_header_at + 1,
                         SidebarItem::Conversation(conversation),
                     );
+                    inserted_index = insert_header_at + 1;
                 }
                 drop(guard);
                 self.apply_search_filter();
+
+                // Select the newly added conversation row
+                let list_widget = self.conversations.widget();
+                if let Some(row) = list_widget.row_at_index(inserted_index as i32) {
+                    list_widget.select_row(Some(&row));
+                }
             }
             SidebarMsg::RemoveConversation(id) => {
                 let mut guard = self.conversations.guard();
