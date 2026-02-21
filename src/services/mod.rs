@@ -1,4 +1,5 @@
 pub mod accounts;
+pub mod agent;
 pub mod chat;
 pub mod conversation;
 pub mod database;

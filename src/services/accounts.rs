@@ -47,11 +47,13 @@ impl AccountService {
         let account_id = Uuid::new_v4().to_string();
         let key_ref = format!("{}:{}", provider.as_str(), &account_id);
 
-        // Store API key in keyring
-        self.keyring
-            .store(&key_ref, &api_key)
-            .await
-            .context("Failed to store API key in keyring")?;
+        // Store API key in keyring (skip for local providers with no key)
+        if !api_key.is_empty() {
+            self.keyring
+                .store(&key_ref, &api_key)
+                .await
+                .context("Failed to store API key in keyring")?;
+        }
 
         let account = Account {
             id: account_id,
@@ -91,11 +93,36 @@ impl AccountService {
             .context("Account not found")?;
 
         let key_ref = format!("{}:{}", account.provider.as_str(), account_id);
-        let api_key = self
-            .keyring
-            .retrieve(&key_ref)
-            .await?
-            .context("API key not found in keyring")?;
+
+        let api_key = match self.keyring.retrieve(&key_ref).await {
+            Ok(Some(key)) => key,
+            Ok(None) => {
+                if account.provider == ProviderId::Local {
+                    String::new()
+                } else {
+                    anyhow::bail!(
+                        "API key not found in keyring for '{}' account",
+                        account.label
+                    );
+                }
+            }
+            Err(e) => {
+                if account.provider == ProviderId::Local {
+                    // Local providers don't require an API key
+                    tracing::warn!(
+                        "Keyring error for local account '{}' (continuing without key): {}",
+                        account.label,
+                        e
+                    );
+                    String::new()
+                } else {
+                    return Err(e.context(format!(
+                        "Failed to retrieve API key for '{}' account",
+                        account.label
+                    )));
+                }
+            }
+        };
 
         Ok((account, api_key))
     }

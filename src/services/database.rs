@@ -9,6 +9,19 @@ use tokio::task;
 use crate::models::{Account, AccountStatus, Attachment, Conversation, Message, ProviderId, Role};
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct ToolExecution {
+    pub id: String,
+    pub message_id: String,
+    pub tool_name: String,
+    pub arguments: String,
+    pub result: Option<String>,
+    pub is_error: bool,
+    pub duration_ms: Option<i64>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
 pub struct Database {
     conn: Arc<Mutex<Connection>>,
 }
@@ -65,7 +78,10 @@ impl Database {
     }
 
     fn run_migrations(&self) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
 
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS schema_version (
@@ -175,6 +191,27 @@ impl Database {
             )?;
         }
 
+        if version < 6 {
+            conn.execute_batch(
+                "ALTER TABLE messages ADD COLUMN metadata TEXT;
+
+                 CREATE TABLE tool_executions (
+                     id TEXT PRIMARY KEY,
+                     message_id TEXT NOT NULL,
+                     tool_name TEXT NOT NULL,
+                     arguments TEXT NOT NULL,
+                     result TEXT,
+                     is_error INTEGER NOT NULL DEFAULT 0,
+                     duration_ms INTEGER,
+                     created_at TEXT NOT NULL,
+                     FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+                 );
+                 CREATE INDEX idx_tool_executions_message ON tool_executions(message_id);
+
+                 UPDATE schema_version SET version = 6;",
+            )?;
+        }
+
         Ok(())
     }
 
@@ -184,7 +221,7 @@ impl Database {
         let conn = self.conn.clone();
         let account = account.clone();
         task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn.lock().map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
             conn.execute(
                 "INSERT INTO accounts (id, provider, label, api_base_url, default_model, is_default, status, total_tokens_in, total_tokens_out, created_at, updated_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
@@ -211,7 +248,7 @@ impl Database {
         let conn = self.conn.clone();
         let id = id.to_string();
         task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn.lock().map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
             let mut stmt = conn.prepare(
                 "SELECT id, provider, label, api_base_url, default_model, is_default, status, total_tokens_in, total_tokens_out, created_at, updated_at
                  FROM accounts WHERE id = ?1",
@@ -229,7 +266,7 @@ impl Database {
     pub async fn list_accounts(&self) -> Result<Vec<Account>> {
         let conn = self.conn.clone();
         task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn.lock().map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
             let mut stmt = conn.prepare(
                 "SELECT id, provider, label, api_base_url, default_model, is_default, status, total_tokens_in, total_tokens_out, created_at, updated_at
                  FROM accounts ORDER BY provider, label",
@@ -248,7 +285,9 @@ impl Database {
         let conn = self.conn.clone();
         let id = id.to_string();
         task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn
+                .lock()
+                .map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
             conn.execute("DELETE FROM accounts WHERE id = ?1", params![id])?;
             Ok(())
         })
@@ -259,7 +298,9 @@ impl Database {
         let conn = self.conn.clone();
         let id = id.to_string();
         task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn
+                .lock()
+                .map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
             conn.execute(
                 "UPDATE accounts SET is_default = 0 WHERE provider = ?1",
                 params![provider.as_str()],
@@ -282,7 +323,7 @@ impl Database {
         let conn = self.conn.clone();
         let id = id.to_string();
         task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn.lock().map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
             conn.execute(
                 "UPDATE accounts SET total_tokens_in = total_tokens_in + ?1, total_tokens_out = total_tokens_out + ?2, updated_at = ?3 WHERE id = ?4",
                 params![tokens_in, tokens_out, Utc::now().to_rfc3339(), id],
@@ -295,7 +336,9 @@ impl Database {
     pub async fn has_any_accounts(&self) -> Result<bool> {
         let conn = self.conn.clone();
         task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn
+                .lock()
+                .map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
             let count: i64 =
                 conn.query_row("SELECT COUNT(*) FROM accounts", [], |row| row.get(0))?;
             Ok(count > 0)
@@ -309,7 +352,7 @@ impl Database {
         let conn = self.conn.clone();
         let conv = conversation.clone();
         task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn.lock().map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
             conn.execute(
                 "INSERT INTO conversations (id, account_id, title, model, system_prompt, created_at, updated_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -331,7 +374,7 @@ impl Database {
     pub async fn list_conversations(&self) -> Result<Vec<Conversation>> {
         let conn = self.conn.clone();
         task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn.lock().map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
             let mut stmt = conn.prepare(
                 "SELECT c.id, c.account_id, c.title, c.model, c.system_prompt, c.created_at, c.updated_at, c.pinned,
                         (SELECT SUBSTR(m.content, 1, 100) FROM messages m WHERE m.conversation_id = c.id AND m.is_active = 1 ORDER BY m.created_at DESC LIMIT 1) as last_preview
@@ -352,7 +395,9 @@ impl Database {
         let id = id.to_string();
         let title = title.to_string();
         task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn
+                .lock()
+                .map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
             conn.execute(
                 "UPDATE conversations SET title = ?1, updated_at = ?2 WHERE id = ?3",
                 params![title, Utc::now().to_rfc3339(), id],
@@ -367,7 +412,9 @@ impl Database {
         let id = id.to_string();
         let model = model.to_string();
         task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn
+                .lock()
+                .map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
             conn.execute(
                 "UPDATE conversations SET model = ?1, updated_at = ?2 WHERE id = ?3",
                 params![model, Utc::now().to_rfc3339(), id],
@@ -381,7 +428,9 @@ impl Database {
         let conn = self.conn.clone();
         let id = id.to_string();
         task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn
+                .lock()
+                .map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
             conn.execute(
                 "UPDATE conversations SET updated_at = ?1 WHERE id = ?2",
                 params![Utc::now().to_rfc3339(), id],
@@ -395,7 +444,9 @@ impl Database {
         let conn = self.conn.clone();
         let id = id.to_string();
         task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn
+                .lock()
+                .map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
             conn.execute("DELETE FROM conversations WHERE id = ?1", params![id])?;
             Ok(())
         })
@@ -406,7 +457,9 @@ impl Database {
         let conn = self.conn.clone();
         let id = id.to_string();
         task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn
+                .lock()
+                .map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
             conn.execute(
                 "UPDATE conversations SET pinned = ?1 WHERE id = ?2",
                 params![pinned as i32, id],
@@ -422,10 +475,10 @@ impl Database {
         let conn = self.conn.clone();
         let msg = message.clone();
         task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn.lock().map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
             conn.execute(
-                "INSERT INTO messages (id, conversation_id, role, content, model, tokens_in, tokens_out, parent_message_id, is_active, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                "INSERT INTO messages (id, conversation_id, role, content, model, tokens_in, tokens_out, parent_message_id, is_active, created_at, metadata)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 params![
                     msg.id,
                     msg.conversation_id,
@@ -437,6 +490,7 @@ impl Database {
                     msg.parent_message_id,
                     msg.is_active as i32,
                     msg.created_at.to_rfc3339(),
+                    msg.metadata,
                 ],
             )?;
             Ok(())
@@ -448,9 +502,9 @@ impl Database {
         let conn = self.conn.clone();
         let conversation_id = conversation_id.to_string();
         task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn.lock().map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
             let mut stmt = conn.prepare(
-                "SELECT id, conversation_id, role, content, model, tokens_in, tokens_out, parent_message_id, is_active, created_at
+                "SELECT id, conversation_id, role, content, model, tokens_in, tokens_out, parent_message_id, is_active, created_at, metadata
                  FROM messages WHERE conversation_id = ?1 AND is_active = 1 ORDER BY created_at ASC",
             )?;
             let messages = stmt
@@ -476,7 +530,9 @@ impl Database {
         let id = id.to_string();
         let system_prompt = system_prompt.map(|s| s.to_string());
         task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn
+                .lock()
+                .map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
             conn.execute(
                 "UPDATE conversations SET system_prompt = ?1, updated_at = ?2 WHERE id = ?3",
                 params![system_prompt, Utc::now().to_rfc3339(), id],
@@ -491,7 +547,9 @@ impl Database {
         let id = id.to_string();
         let content = content.to_string();
         task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn
+                .lock()
+                .map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
             conn.execute(
                 "UPDATE messages SET content = ?1 WHERE id = ?2",
                 params![content, id],
@@ -510,7 +568,9 @@ impl Database {
         let conversation_id = conversation_id.to_string();
         let after_created_at = after_created_at.to_string();
         task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn
+                .lock()
+                .map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
             conn.execute(
                 "UPDATE messages SET is_active = 0 WHERE conversation_id = ?1 AND created_at > ?2",
                 params![conversation_id, after_created_at],
@@ -524,7 +584,7 @@ impl Database {
         let conn = self.conn.clone();
         let att = attachment.clone();
         task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn.lock().map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
             conn.execute(
                 "INSERT INTO message_attachments (id, message_id, mime_type, filename, data, created_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -546,7 +606,9 @@ impl Database {
         let conn = self.conn.clone();
         let message_id = message_id.to_string();
         task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn
+                .lock()
+                .map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
             let mut stmt = conn.prepare(
                 "SELECT id, message_id, mime_type, filename, data, created_at
                  FROM message_attachments WHERE message_id = ?1",
@@ -561,11 +623,84 @@ impl Database {
         .await?
     }
 
+    // --- Tool Executions ---
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn insert_tool_execution(
+        &self,
+        id: &str,
+        message_id: &str,
+        tool_name: &str,
+        arguments: &str,
+        result: Option<&str>,
+        is_error: bool,
+        duration_ms: Option<i64>,
+    ) -> Result<()> {
+        let conn = self.conn.clone();
+        let id = id.to_string();
+        let message_id = message_id.to_string();
+        let tool_name = tool_name.to_string();
+        let arguments = arguments.to_string();
+        let result = result.map(|s| s.to_string());
+        task::spawn_blocking(move || {
+            let conn = conn.lock().map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
+            conn.execute(
+                "INSERT INTO tool_executions (id, message_id, tool_name, arguments, result, is_error, duration_ms, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    id,
+                    message_id,
+                    tool_name,
+                    arguments,
+                    result,
+                    is_error as i32,
+                    duration_ms,
+                    Utc::now().to_rfc3339(),
+                ],
+            )?;
+            Ok(())
+        })
+        .await?
+    }
+
+    #[allow(dead_code)]
+    pub async fn list_tool_executions(&self, message_id: &str) -> Result<Vec<ToolExecution>> {
+        let conn = self.conn.clone();
+        let message_id = message_id.to_string();
+        task::spawn_blocking(move || {
+            let conn = conn.lock().map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
+            let mut stmt = conn.prepare(
+                "SELECT id, message_id, tool_name, arguments, result, is_error, duration_ms, created_at
+                 FROM tool_executions WHERE message_id = ?1 ORDER BY created_at ASC",
+            )?;
+            let executions = stmt
+                .query_map(params![message_id], |row| {
+                    let is_error_int: i32 = row.get(5)?;
+                    let created_str: String = row.get(7)?;
+                    Ok(ToolExecution {
+                        id: row.get(0)?,
+                        message_id: row.get(1)?,
+                        tool_name: row.get(2)?,
+                        arguments: row.get(3)?,
+                        result: row.get(4)?,
+                        is_error: is_error_int != 0,
+                        duration_ms: row.get(6)?,
+                        created_at: DateTime::parse_from_rfc3339(&created_str)
+                            .unwrap()
+                            .with_timezone(&Utc),
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(executions)
+        })
+        .await?
+    }
+
     pub async fn get_conversation(&self, id: &str) -> Result<Option<Conversation>> {
         let conn = self.conn.clone();
         let id = id.to_string();
         task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn.lock().map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
             let mut stmt = conn.prepare(
                 "SELECT c.id, c.account_id, c.title, c.model, c.system_prompt, c.created_at, c.updated_at, c.pinned,
                         (SELECT SUBSTR(m.content, 1, 100) FROM messages m WHERE m.conversation_id = c.id AND m.is_active = 1 ORDER BY m.created_at DESC LIMIT 1) as last_preview
@@ -589,7 +724,9 @@ impl Database {
         let conn = self.conn.clone();
         let key = key.to_string();
         task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn
+                .lock()
+                .map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
             let result: Option<String> = conn
                 .query_row(
                     "SELECT value FROM settings WHERE key = ?1",
@@ -607,7 +744,7 @@ impl Database {
         let key = key.to_string();
         let value = value.to_string();
         task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn.lock().map_err(|e| anyhow::anyhow!("Database mutex poisoned: {e}"))?;
             conn.execute(
                 "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2",
                 params![key, value],
@@ -666,6 +803,7 @@ impl Database {
         let role_str: String = row.get(2)?;
         let is_active_int: i32 = row.get(8)?;
         let created_str: String = row.get(9)?;
+        let metadata: Option<String> = row.get(10).unwrap_or(None);
 
         Ok(Message {
             id: row.get(0)?,
@@ -680,6 +818,7 @@ impl Database {
             is_active: is_active_int != 0,
             created_at: DateTime::parse_from_rfc3339(&created_str)?.with_timezone(&Utc),
             attachments: Vec::new(),
+            metadata,
         })
     }
 
@@ -789,6 +928,7 @@ mod tests {
             is_active: true,
             created_at: now,
             attachments: Vec::new(),
+            metadata: None,
         };
         db.insert_message(&msg).await.unwrap();
 

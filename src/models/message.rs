@@ -40,4 +40,7 @@ pub struct Message {
     pub created_at: DateTime<Utc>,
     #[serde(skip)]
     pub attachments: Vec<Attachment>,
+    /// JSON blob for tool_calls/tool_results metadata
+    #[serde(default)]
+    pub metadata: Option<String>,
 }

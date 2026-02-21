@@ -3,6 +3,7 @@ mod config;
 mod models;
 mod providers;
 mod services;
+mod tools;
 mod ui;
 
 use gtk::prelude::*;

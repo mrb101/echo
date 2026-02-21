@@ -17,6 +17,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 1. Install the generator tool
+      - name: Install Flatpak Cargo Generator
+        run: |
+          # 1. Install the Python dependency needed by the script
+          pip3 install tomlkit
+          curl https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py -o generator.py
+
+      # 2. Generate the sources file from your Cargo.lock
+      - name: Generate Cargo Sources
+        run: python3 generator.py Cargo.lock -o build-aux/cargo-sources.json
+
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           manifest-path: build-aux/io.github.mrb101.Echo.json

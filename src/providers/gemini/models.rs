@@ -10,6 +10,21 @@ pub struct GeminiRequest {
     pub system_instruction: Option<GeminiContent>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub generation_config: Option<GeminiGenerationConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<GeminiToolConfig>>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GeminiToolConfig {
+    pub function_declarations: Vec<GeminiFunctionDeclaration>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GeminiFunctionDeclaration {
+    pub name: String,
+    pub description: String,
+    pub parameters: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -31,6 +46,22 @@ pub struct GeminiPart {
     pub text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub inline_data: Option<GeminiInlineData>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub function_call: Option<GeminiFunctionCall>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub function_response: Option<GeminiFunctionResponse>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GeminiFunctionCall {
+    pub name: String,
+    pub args: serde_json::Value,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GeminiFunctionResponse {
+    pub name: String,
+    pub response: serde_json::Value,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
