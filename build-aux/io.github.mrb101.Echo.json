@@ -24,7 +24,7 @@
     "modules": [
         {
             "name": "echo",
-            "buildsystem": "cargo",
+            "buildsystem": "simple",
             "build-commands": [
                 "cargo --offline build --release",
                 "install -Dm755 target/release/echo /app/bin/echo",
@@ -37,7 +37,10 @@
                     "type": "dir",
                     "path": ".."
                 },
-                "cargo-sources.json"
+                {
+                    "type": "file",
+                    "path": "cargo-sources.json"
+                }
             ]
         }
     ]
