@@ -1,5 +1,6 @@
 # Rust build artifacts
 /target/
+vendor/
 
 # Cargo lock file (optional — remove this line if you want to track Cargo.lock)
 # Cargo.lock
